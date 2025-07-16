@@ -91,6 +91,28 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# 선택된 멀티셀렉트/날짜 색상 파란색으로 변경 (강조 아님)
+st.markdown('''
+<style>
+/* 멀티셀렉트 선택된 값(태그) 파란색 */
+span[data-baseweb="tag"] {
+    background-color: #2563eb !important;
+    color: #fff !important;
+    border-radius: 6px !important;
+}
+/* date_input 캘린더에서 선택된 날짜 파란색 (다양한 버전 대응) */
+div[role="dialog"] [aria-selected="true"],
+div[role="dialog"] [data-selected="true"],
+.css-1d391kg[aria-selected="true"],
+.css-1v5z18m[aria-selected="true"],
+.css-1d391kg[data-selected="true"],
+.css-1v5z18m[data-selected="true"] {
+    background: #2563eb !important;
+    color: #fff !important;
+}
+</style>
+''', unsafe_allow_html=True)
+
 # chart-container 스타일을 st.container()에 맞게 전역 적용
 st.markdown('''
 <style>
