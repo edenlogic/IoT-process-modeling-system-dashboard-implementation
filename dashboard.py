@@ -5,6 +5,7 @@ import plotly.express as px
 from datetime import datetime, timedelta
 import numpy as np
 import time
+import requests
 
 # 페이지 설정
 st.set_page_config(
@@ -110,6 +111,16 @@ div[role="dialog"] [data-selected="true"],
     background: #2563eb !important;
     color: #fff !important;
 }
+/* 대제목 위 여백 조정 /
+.stElementContainer.element-container.st-emotion-cache-v3w3zg.eertqu00 {
+    margin-top: 0.0rem !important;
+    padding-top: 0.0rem !important;
+}
+/* 첫 번째 stElementContainer 여백 조정 */
+div[data-testid="stVerticalBlock"] > div:first-child {
+    margin-top: 0.0rem !important;
+    padding-top: 0.0rem !important;
+}
 </style>
 ''', unsafe_allow_html=True)
 
@@ -162,9 +173,17 @@ def generate_equipment_status():
     ]
     return equipment
 
+def get_alerts_data():
+    url = "http://localhost:5001/alerts"
+    res = requests.get(url)
+    if res.status_code == 200:
+        return res.json()
+    else:
+        return []
+
 @st.cache_data
 def generate_alert_data():
-    """이상 알림 데이터 생성"""
+    """이상 알림 데이터 생성 (더미 데이터)"""
     alerts = [
         {'time': '14:30', 'equipment': '프레스기 B', 'issue': '정상 복구', 'severity': 'info'},
         {'time': '13:20', 'equipment': '용접기 1', 'issue': '비상 정지', 'severity': 'error'},
@@ -172,6 +191,15 @@ def generate_alert_data():
         {'time': '10:12', 'equipment': '프레스기 A', 'issue': '진동 수치 증가', 'severity': 'warning'}
     ]
     return alerts
+
+def get_alerts_data():
+    url = "http://localhost:5001/alerts"
+    res = requests.get(url)
+    if res.status_code == 200:
+        return res.json()
+    else:
+        return []
+
 
 @st.cache_data
 def generate_quality_trend():
@@ -186,7 +214,7 @@ def generate_quality_trend():
 
 # 메인 대시보드
 def main():
-    # 사이드바 복구 (필터, 날짜 선택)
+    # 사이드바 (필터, 날짜 선택)
     with st.sidebar:
         st.markdown('### 필터')
         st.markdown('공정 선택')
@@ -209,10 +237,16 @@ def main():
             label_visibility="collapsed"
         )
         st.markdown('---')
-        st.checkbox("자동 새로고침 (10초)", key="sidebar_autorefresh")
+        # 데이터 소스 토글 추가
+        st.markdown('### 데이터 소스')
+        use_real_api = st.toggle("실제 API 연동", value=False, help="실제 API에서 데이터를 받아옵니다. 끄면 더미 데이터를 사용합니다.")
+        st.markdown('---')
+        # 자동 새로고침 관련 코드 완전 제거
 
-    # 헤더 및 KPI 카드 영역
-    st.markdown('<div class="main-header">POSCO MOBILITY IoT 대시보드</div>', unsafe_allow_html=True)
+    # 자동 새로고침 기능 완전 제거
+
+    # 헤더 및 KPI 카드 영역 (여백 조정)
+    st.markdown('<div class="main-header" style="margin-top: 0;">POSCO MOBILITY IoT 대시보드</div>', unsafe_allow_html=True)
     kpi1, kpi2, kpi3 = st.columns(3, gap="medium")
     with kpi1:
         st.markdown("""
@@ -302,7 +336,12 @@ def main():
     # 이상 알림 테이블
     with col1:
         st.markdown('### 이상 알림')
-        alerts = generate_alert_data()
+        # 토글에 따라 데이터 소스 선택
+        if use_real_api:
+            alerts = get_alerts_data()
+        else:
+            alerts = generate_alert_data()
+        
         alert_df = pd.DataFrame(alerts)
         # 심각도 색상 스타일링
         def highlight_issue(row):
@@ -334,11 +373,7 @@ def main():
         )
         st.plotly_chart(fig, use_container_width=True)
 
-    # 자동 새로고침 (선택사항)
-    # 사이드바에만 자동 새로고침 체크박스가 있으므로, 여기서는 중복 제거
-    # if st.sidebar.checkbox("자동 새로고침 (10초)"): # 중복 제거
-    #     time.sleep(10)
-    #     st.rerun()
+
 
 if __name__ == "__main__":
     main()
