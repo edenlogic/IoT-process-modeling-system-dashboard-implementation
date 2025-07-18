@@ -13,6 +13,7 @@ POSCO Mobility의 IoT 설비 모니터링을 위한 실시간 대시보드입니
 
 ## 기술 스택
 - **Frontend**: Streamlit
+- **Backend**: FastAPI (`api_server.py`)
 - **Data Visualization**: Plotly
 - **Data Processing**: Pandas, NumPy
 - **API Integration**: Requests
@@ -47,13 +48,12 @@ streamlit run dashboard.py
 ## API 연동
 
 ### 실제 API 사용 시
-`dashboard.py`의 `get_alerts_data()` 함수에서 API 엔드포인트를 설정하세요:
+`dashboard.py`의 `get_alerts_data()` 함수에서 **FastAPI 서버 엔드포인트**를 아래와 같이 설정하세요:
 
 ```python
 def get_alerts_data():
-    response = requests.get('http://your-api-endpoint/alerts')
+    response = requests.get('http://localhost:8000/alerts')  # FastAPI 실행 시 기본 주소
     return response.json()
-```
 
 ## 보안 및 성능
 

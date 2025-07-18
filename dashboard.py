@@ -174,7 +174,7 @@ def generate_equipment_status():
     return equipment
 
 def get_alerts_data():
-    url = "http://localhost:5001/alerts"
+    url = "http://localhost:8000/alerts"
     res = requests.get(url)
     if res.status_code == 200:
         return res.json()
@@ -193,7 +193,7 @@ def generate_alert_data():
     return alerts
 
 def get_alerts_data():
-    url = "http://localhost:5001/alerts"
+    url = "http://localhost:8000/alerts"
     res = requests.get(url)
     if res.status_code == 200:
         return res.json()
