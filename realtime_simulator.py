@@ -1,630 +1,724 @@
+import pandas as pd
+import numpy as np
 import requests
 import json
 import time
-import random
-import numpy as np
+import logging
 from datetime import datetime, timedelta
 import threading
-import logging
-from typing import Dict, List, Tuple, Optional
-from dataclasses import dataclass
-from enum import Enum
-import pandas as pd
+from typing import Dict, List, Optional, Tuple
+import random
+from collections import deque
+from abc import ABC, abstractmethod
 
 # 로깅 설정
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger('IoTSimulator')
 
 # API 엔드포인트
 API_BASE_URL = "http://localhost:8000"
 
-class EquipmentStatus(Enum):
-    """설비 상태 열거형"""
-    NORMAL = "정상"
-    WARNING = "주의"
-    ERROR = "오류"
-
-class SensorType(Enum):
-    """센서 타입 열거형"""
-    TEMPERATURE = "temperature"
-    PRESSURE = "pressure"
-    VIBRATION = "vibration"
-    HUMIDITY = "humidity"
-    POWER = "power"
-    SPEED = "speed"
-
-@dataclass
-class SensorConfig:
-    """센서 설정 클래스"""
-    sensor_type: SensorType
-    min_value: float
-    max_value: float
-    normal_range: Tuple[float, float]
-    warning_threshold: float
-    error_threshold: float
-    noise_level: float = 0.1
-    trend_factor: float = 0.0  # 트렌드 영향도
-
-@dataclass
-class Equipment:
-    """설비 정보 클래스"""
-    id: str
-    name: str
-    type: str
-    sensors: List[SensorConfig]
-    status: EquipmentStatus = EquipmentStatus.NORMAL
-    efficiency: float = 95.0
-    failure_probability: float = 0.001  # 고장 확률
-    efficiency_updated: datetime = None  # 효율성 업데이트 시간
+class BaseCSVSimulator(ABC):
+    """CSV 기반 시뮬레이터 베이스 클래스"""
     
-    def __post_init__(self):
-        """초기화 후 처리"""
-        if self.efficiency_updated is None:
-            self.efficiency_updated = datetime.now()
-
-class Scenario(Enum):
-    """시뮬레이션 시나리오"""
-    NORMAL = "normal"  # 정상 운영
-    GRADUAL_DEGRADATION = "gradual_degradation"  # 점진적 성능 저하
-    SUDDEN_FAILURE = "sudden_failure"  # 급작스런 고장
-    PERIODIC_MAINTENANCE = "periodic_maintenance"  # 정기 점검
-    OVERLOAD = "overload"  # 과부하
-    SENSOR_MALFUNCTION = "sensor_malfunction"  # 센서 오작동
-    CYBER_ATTACK = "cyber_attack"  # 사이버 공격 (이상 패턴)
-
-class IoTDataSimulator:
-    """IoT 데이터 시뮬레이터 메인 클래스"""
-    
-    def __init__(self):
-        self.equipment_list = self._initialize_equipment()
+    def __init__(self, csv_path: str, topic_name: str):
+        self.csv_path = csv_path
+        self.topic_name = topic_name
+        self.df = None
+        self.patterns = {}
         self.running = False
-        self.threads = []
-        self.scenario = Scenario.NORMAL
-        self.time_acceleration = 1.0  # 시간 가속 배율
-        self.data_buffer = []  # 데이터 버퍼
-        self.alert_buffer = []  # 알림 버퍼
-        self.data_lock = threading.Lock()  # 스레드 동기화용
-        self.alert_lock = threading.Lock()  # 알림 버퍼 동기화용
+        self.logger = logging.getLogger(f'{self.__class__.__name__}')
         
-    def _initialize_equipment(self) -> List[Equipment]:
-        """설비 및 센서 초기화"""
-        equipment_configs = [
-            # 프레스기
-            Equipment(
-                id="press_001",
-                name="프레스기 #001",
-                type="프레스",
-                sensors=[
-                    SensorConfig(
-                        sensor_type=SensorType.TEMPERATURE,
-                        min_value=20, max_value=100,
-                        normal_range=(40, 60),
-                        warning_threshold=65,  # 낮춤
-                        error_threshold=75,    # 낮춤
-                        noise_level=3.0
-                    ),
-                    SensorConfig(
-                        sensor_type=SensorType.PRESSURE,
-                        min_value=0, max_value=300,
-                        normal_range=(120, 180),
-                        warning_threshold=200,  # 낮춤
-                        error_threshold=220,    # 낮춤
-                        noise_level=8.0
-                    ),
-                    SensorConfig(
-                        sensor_type=SensorType.VIBRATION,
-                        min_value=0, max_value=5,
-                        normal_range=(0.2, 0.8),
-                        warning_threshold=1.2,  # 낮춤
-                        error_threshold=1.5,    # 낮춤
-                        noise_level=0.15
-                    )
-                ]
-            ),
-            Equipment(
-                id="press_002",
-                name="프레스기 #002",
-                type="프레스",
-                sensors=[
-                    SensorConfig(
-                        sensor_type=SensorType.TEMPERATURE,
-                        min_value=20, max_value=100,
-                        normal_range=(40, 60),
-                        warning_threshold=75,
-                        error_threshold=85,
-                        noise_level=2.0
-                    ),
-                    SensorConfig(
-                        sensor_type=SensorType.PRESSURE,
-                        min_value=0, max_value=300,
-                        normal_range=(120, 180),
-                        warning_threshold=220,
-                        error_threshold=250,
-                        noise_level=5.0
-                    )
-                ]
-            ),
-            # 용접기
-            Equipment(
-                id="weld_001",
-                name="용접기 #001",
-                type="용접",
-                sensors=[
-                    SensorConfig(
-                        sensor_type=SensorType.TEMPERATURE,
-                        min_value=100, max_value=500,
-                        normal_range=(200, 300),
-                        warning_threshold=350,
-                        error_threshold=400,
-                        noise_level=10.0
-                    ),
-                    SensorConfig(
-                        sensor_type=SensorType.POWER,
-                        min_value=0, max_value=100,
-                        normal_range=(40, 70),
-                        warning_threshold=85,
-                        error_threshold=95,
-                        noise_level=3.0
-                    )
-                ]
-            ),
-            Equipment(
-                id="weld_002",
-                name="용접기 #002",
-                type="용접",
-                sensors=[
-                    SensorConfig(
-                        sensor_type=SensorType.TEMPERATURE,
-                        min_value=100, max_value=500,
-                        normal_range=(200, 300),
-                        warning_threshold=350,
-                        error_threshold=400,
-                        noise_level=10.0
-                    ),
-                    SensorConfig(
-                        sensor_type=SensorType.POWER,
-                        min_value=0, max_value=100,
-                        normal_range=(40, 70),
-                        warning_threshold=85,
-                        error_threshold=95,
-                        noise_level=3.0
-                    )
-                ]
-            ),
-            # 조립기
-            Equipment(
-                id="assemble_001",
-                name="조립기 #001",
-                type="조립",
-                sensors=[
-                    SensorConfig(
-                        sensor_type=SensorType.SPEED,
-                        min_value=0, max_value=200,
-                        normal_range=(80, 120),
-                        warning_threshold=150,
-                        error_threshold=180,
-                        noise_level=5.0
-                    ),
-                    SensorConfig(
-                        sensor_type=SensorType.VIBRATION,
-                        min_value=0, max_value=3,
-                        normal_range=(0.1, 0.5),
-                        warning_threshold=1.0,
-                        error_threshold=1.5,
-                        noise_level=0.05
-                    )
-                ]
-            ),
-            # 검사기
-            Equipment(
-                id="inspect_001",
-                name="검사기 #001",
-                type="검사",
-                sensors=[
-                    SensorConfig(
-                        sensor_type=SensorType.POWER,
-                        min_value=0, max_value=50,
-                        normal_range=(10, 30),
-                        warning_threshold=40,
-                        error_threshold=45,
-                        noise_level=2.0
-                    )
-                ]
-            )
-        ]
-        
-        return equipment_configs
-    
-    def generate_sensor_value(self, equipment: Equipment, sensor: SensorConfig, 
-                            timestamp: datetime) -> float:
-        """센서 값 생성 (시나리오 기반)"""
-        
-        # 기본값: 정상 범위 중간값
-        base_value = (sensor.normal_range[0] + sensor.normal_range[1]) / 2
-        
-        # 시간에 따른 주기적 변동 (일일 패턴)
-        hour = timestamp.hour
-        daily_pattern = np.sin(2 * np.pi * hour / 24) * 5
-        
-        # 노이즈 추가
-        noise = np.random.normal(0, sensor.noise_level)
-        
-        # 시나리오별 값 조정
-        if self.scenario == Scenario.NORMAL:
-            # 정상: 기본 패턴 + 노이즈 + 가끔 스파이크
-            value = base_value + daily_pattern + noise
-            # 10% 확률로 작은 스파이크 추가
-            if random.random() < 0.1:
-                spike = random.uniform(5, 15) * random.choice([1, -1])
-                value += spike
-                
-        elif self.scenario == Scenario.GRADUAL_DEGRADATION:
-            # 점진적 성능 저하: 시간에 따라 값이 증가
-            days_elapsed = (datetime.now() - equipment.efficiency_updated).total_seconds() / 86400  # 일 단위
-            degradation = days_elapsed * 5  # 하루에 5씩 증가 (테스트용으로 빠르게)
-            value = base_value + daily_pattern + noise + degradation
-            
-        elif self.scenario == Scenario.SUDDEN_FAILURE:
-            # 급작스런 고장: 자주 이상값 발생
-            if random.random() < 0.3:  # 30% 확률로 이상값
-                value = sensor.error_threshold + random.uniform(0, 20)
-            else:
-                value = base_value + daily_pattern + noise
-                
-        elif self.scenario == Scenario.OVERLOAD:
-            # 과부하: 모든 값이 높은 범위에서 변동
-            overload_factor = 1.5  # 1.3 → 1.5로 증가
-            value = base_value * overload_factor + daily_pattern + noise
-            # 추가로 20% 확률로 임계값 초과
-            if random.random() < 0.2:
-                value = sensor.warning_threshold + random.uniform(0, 10)
-            
-        elif self.scenario == Scenario.SENSOR_MALFUNCTION:
-            # 센서 오작동: 비정상적인 패턴
-            if random.random() < 0.2:  # 20% 확률로 오작동
-                # 이상한 값들: 0, 최대값, 랜덤
-                malfunction_type = random.choice(['zero', 'max', 'random'])
-                if malfunction_type == 'zero':
-                    value = 0
-                elif malfunction_type == 'max':
-                    value = sensor.max_value
-                else:
-                    value = random.uniform(sensor.min_value, sensor.max_value)
-            else:
-                value = base_value + daily_pattern + noise
-                
-        elif self.scenario == Scenario.CYBER_ATTACK:
-            # 사이버 공격: 규칙적인 이상 패턴
-            attack_pattern = np.sin(10 * np.pi * timestamp.second / 60) * 20
-            value = base_value + attack_pattern + noise
-            
-        else:
-            value = base_value + daily_pattern + noise
-        
-        # 값 범위 제한
-        value = np.clip(value, sensor.min_value, sensor.max_value)
-        
-        return float(value)
-    
-    def check_and_create_alert(self, equipment: Equipment, sensor: SensorConfig, 
-                              value: float, timestamp: datetime):
-        """임계값 체크 및 알림 생성"""
-        severity = None
-        message = None
-        
-        if value >= sensor.error_threshold:
-            severity = "error"
-            message = f"{sensor.sensor_type.value} 임계값 초과: {value:.2f} (임계값: {sensor.error_threshold})"
-            equipment.status = EquipmentStatus.ERROR
-            
-        elif value >= sensor.warning_threshold:
-            severity = "warning"
-            message = f"{sensor.sensor_type.value} 경고 수준: {value:.2f} (경고값: {sensor.warning_threshold})"
-            if equipment.status != EquipmentStatus.ERROR:
-                equipment.status = EquipmentStatus.WARNING
-                
-        else:
-            # 모든 센서가 정상이면 설비 상태도 정상으로
-            all_normal = True
-            for s in equipment.sensors:
-                last_value = getattr(equipment, f'last_{s.sensor_type.value}', 0)
-                if last_value >= s.warning_threshold:
-                    all_normal = False
-                    break
-            if all_normal:
-                equipment.status = EquipmentStatus.NORMAL
-        
-        # 알림 생성
-        if severity:
-            alert_data = {
-                "equipment": equipment.id,
-                "sensor_type": sensor.sensor_type.value,
-                "value": value,
-                "threshold": sensor.error_threshold if severity == "error" else sensor.warning_threshold,
-                "severity": severity,
-                "timestamp": timestamp.isoformat(),
-                "message": message
-            }
-            
-            with self.alert_lock:
-                self.alert_buffer.append(alert_data)
-            
-            logger.info(f"🚨 알림 생성: {equipment.name} - {message}")
-    
-    def send_sensor_data(self):
-        """버퍼의 센서 데이터를 API로 전송"""
-        with self.data_lock:
-            if not self.data_buffer:
-                return
-            
-            # 버퍼 복사 후 비우기
-            data_to_send = self.data_buffer.copy()
-            self.data_buffer.clear()
-            
+    def load_data(self):
+        """CSV 데이터 로드"""
         try:
-            for data in data_to_send:
-                response = requests.post(
-                    f"{API_BASE_URL}/sensors",
-                    json=data,
-                    timeout=5
-                )
-                if response.status_code != 200:
-                    logger.error(f"센서 데이터 전송 실패: {response.status_code}")
-            
-            logger.info(f"센서 데이터 {len(data_to_send)}건 전송 완료")
-            
+            self.df = pd.read_csv(self.csv_path)
+            self.logger.info(f"CSV 데이터 로드 완료: {len(self.df)} 행")
+            self.learn_patterns()
         except Exception as e:
-            logger.error(f"센서 데이터 전송 오류: {e}")
+            self.logger.error(f"CSV 로드 실패: {e}")
+            raise
     
-    def send_alerts(self):
-        """버퍼의 알림을 API로 전송"""
-        with self.alert_lock:
-            if not self.alert_buffer:
-                return
-            
-            # 버퍼 복사 후 비우기
-            alerts_to_send = self.alert_buffer.copy()
-            self.alert_buffer.clear()
-            
-        try:
-            for alert in alerts_to_send:
-                response = requests.post(
-                    f"{API_BASE_URL}/alerts",
-                    json=alert,
-                    timeout=5
-                )
-                if response.status_code != 200:
-                    logger.error(f"알림 전송 실패: {response.status_code}")
-            
-            logger.info(f"알림 {len(alerts_to_send)}건 전송 완료")
-            
-        except Exception as e:
-            logger.error(f"알림 전송 오류: {e}")
+    @abstractmethod
+    def learn_patterns(self):
+        """데이터 패턴 학습"""
+        pass
     
-    def update_equipment_status(self, equipment: Equipment):
-        """설비 상태 업데이트"""
+    @abstractmethod
+    def generate_data(self) -> Dict:
+        """가상 데이터 생성"""
+        pass
+    
+    def send_to_api(self, data: Dict):
+        """API로 데이터 전송"""
         try:
-            # 효율성 계산 (상태에 따라)
-            if equipment.status == EquipmentStatus.ERROR:
-                equipment.efficiency = 0
-            elif equipment.status == EquipmentStatus.WARNING:
-                equipment.efficiency = random.uniform(60, 80)
-            else:
-                equipment.efficiency = random.uniform(85, 98)
+            # 모든 numpy 타입을 Python 네이티브 타입으로 변환
+            def convert_to_native(obj):
+                if isinstance(obj, np.integer):
+                    return int(obj)
+                elif isinstance(obj, np.floating):
+                    return float(obj)
+                elif isinstance(obj, np.ndarray):
+                    return obj.tolist()
+                elif isinstance(obj, np.bool_):  # numpy bool 타입 처리
+                    return bool(obj)
+                elif isinstance(obj, bool):  # Python native bool은 그대로
+                    return obj
+                elif isinstance(obj, dict):
+                    return {key: convert_to_native(value) for key, value in obj.items()}
+                elif isinstance(obj, list):
+                    return [convert_to_native(item) for item in obj]
+                return obj
             
-            response = requests.put(
-                f"{API_BASE_URL}/equipment/{equipment.id}/status",
-                params={
-                    "status": equipment.status.value,
-                    "efficiency": equipment.efficiency
-                },
-                timeout=5
-            )
+            # 데이터 변환
+            data = convert_to_native(data)
+            
+            # 엔드포인트 수정: /sensors/{topic} → /sensors
+            endpoint = f"{API_BASE_URL}/sensors"
+            response = requests.post(endpoint, json=data, timeout=5)
             
             if response.status_code != 200:
-                logger.error(f"설비 상태 업데이트 실패: {response.status_code}")
-                
+                self.logger.error(f"데이터 전송 실패: {response.status_code}")
+            else:
+                self.logger.info(f"데이터 전송 성공: {self.topic_name}")
         except Exception as e:
-            logger.error(f"설비 상태 업데이트 오류: {e}")
+            self.logger.error(f"API 전송 오류: {e}")
     
-    def simulate_equipment(self, equipment: Equipment):
-        """개별 설비 시뮬레이션"""
-        logger.info(f"{equipment.name} 시뮬레이션 시작")
-        
-        while self.running:
-            timestamp = datetime.now()
-            
-            # 각 센서별 데이터 생성
-            for sensor in equipment.sensors:
-                value = self.generate_sensor_value(equipment, sensor, timestamp)
-                
-                # 센서 데이터 버퍼에 추가 (스레드 안전)
-                sensor_data = {
-                    "equipment": equipment.id,
-                    "sensor_type": sensor.sensor_type.value,
-                    "value": value,
-                    "timestamp": timestamp.isoformat()
-                }
-                
-                with self.data_lock:
-                    self.data_buffer.append(sensor_data)
-                
-                # 임계값 체크 및 알림 생성
-                self.check_and_create_alert(equipment, sensor, value, timestamp)
-                
-                # 마지막 값 저장 (상태 확인용)
-                setattr(equipment, f'last_{sensor.sensor_type.value}', value)
-                
-                # 로그에 값 출력 (디버깅용)
-                logger.debug(f"{equipment.name} - {sensor.sensor_type.value}: {value:.2f}")
-            
-            # 설비 상태 업데이트
-            self.update_equipment_status(equipment)
-            
-            # 버퍼가 일정 크기 이상이면 전송
-            if len(self.data_buffer) >= 10:
-                self.send_sensor_data()
-            
-            if len(self.alert_buffer) >= 3:  # 알림은 3개 이상이면 전송
-                self.send_alerts()
-            
-            # 대기 (시간 가속 적용)
-            time.sleep(5 / self.time_acceleration)  # 5초마다 데이터 생성
-        
-        logger.info(f"{equipment.name} 시뮬레이션 종료")
-    
-    def start(self, scenario: Scenario = Scenario.NORMAL, time_acceleration: float = 1.0):
-        """시뮬레이션 시작"""
-        self.scenario = scenario
-        self.time_acceleration = time_acceleration
+    def run(self, interval: float = 1.0, test_mode: bool = True, test_scenario: int = 1):
+        """시뮬레이터 실행"""
         self.running = True
+        self.logger.info(f"{self.topic_name} 시뮬레이터 시작")
         
-        logger.info(f"시뮬레이션 시작 - 시나리오: {scenario.value}, 시간 가속: {time_acceleration}x")
+        self.start_time = time.time()  # generate_data에서 사용하기 위해 저장
+        self.test_mode = test_mode
+        self.test_scenario = test_scenario
         
-        # 각 설비별 스레드 생성
-        for equipment in self.equipment_list:
-            thread = threading.Thread(
-                target=self.simulate_equipment,
-                args=(equipment,),
-                daemon=True
-            )
+        max_duration = 120 if test_mode else float('inf')  # 테스트모드: 2분
+        normal_count = 0
+        fault_count = 0
+        
+        while self.running and (time.time() - self.start_time) < max_duration:
+            try:
+                elapsed = time.time() - self.start_time
+                
+                # 테스트 모드일 때 진행 상황 출력 (10초마다)
+                if test_mode and int(elapsed) % 10 == 0 and int(elapsed) > 0:
+                    self.logger.info(f"[테스트 {elapsed:.0f}초] 정상: {normal_count}, 이상: {fault_count}")
+                
+                data = self.generate_data()
+                
+                # 카운트 업데이트 - Manufacturing도 동일하게 처리
+                if self.topic_name == 'manufacturing':
+                    # Manufacturing은 predictions에서 이상 여부 확인
+                    if (data.get('predictions', {}).get('energy_anomaly') or 
+                        data.get('predictions', {}).get('vibration_spike')):
+                        fault_count += 1
+                    else:
+                        normal_count += 1
+                else:
+                    # Hydraulic은 fault_status에서 확인
+                    if data['fault_status']['is_normal'] == 0:
+                        fault_count += 1
+                    else:
+                        normal_count += 1
+                    
+                self.send_to_api(data)
+                time.sleep(interval)
+                
+            except KeyboardInterrupt:
+                self.stop()
+            except Exception as e:
+                self.logger.error(f"시뮬레이션 오류: {e}")
+        
+        if test_mode:
+            self.logger.info(f"테스트 완료! 총 {elapsed:.0f}초 실행")
+            self.logger.info(f"최종 결과 - 정상: {normal_count}, 이상: {fault_count}")
+    
+    def stop(self):
+        """시뮬레이터 중지"""
+        self.running = False
+        self.logger.info(f"{self.topic_name} 시뮬레이터 중지")
+
+
+class HydraulicSimulator(BaseCSVSimulator):
+    """유압 시스템 시뮬레이터"""
+    
+    def __init__(self, csv_path: str):
+        super().__init__(csv_path, "hydraulic")
+        self.sensor_types = ['PS', 'TS', 'FS', 'VS', 'EPS', 'CE', 'CP', 'SE']
+        self.fault_components = ['Cooler', 'Valve', 'Pump', 'Accumulator']
+        
+    def learn_patterns(self):
+        """유압 데이터 패턴 학습 - 부품 값 기반 정상/고장 판단"""
+        
+        # 각 부품의 정상값 정의 (높은 값이 정상)
+        COMPONENT_NORMAL_VALUES = {
+            'Cooler': 3.0,      # 3 = 정상, 20/100 = 고장
+            'Valve': 100.0,     # 100 = 정상, 73/80/90 = 고장  
+            'Pump': 2.0,        # 2 = 정상, 0/1 = 고장
+            'Accumulator': 130.0  # 130 = 정상, 90/100/115 = 고장
+        }
+        
+        self.component_normal_values = COMPONENT_NORMAL_VALUES
+        
+        # 각 부품의 정상 임계값 (이 값 이상이면 정상)
+        NORMAL_THRESHOLDS = {
+            'Cooler': 2.5,      # 2.5 이상이면 정상
+            'Valve': 95.0,      # 95 이상이면 정상
+            'Pump': 1.5,        # 1.5 이상이면 정상
+            'Accumulator': 125.0  # 125 이상이면 정상
+        }
+        
+        # 실제 정상/비정상 데이터 분리 (부품 값 기반)
+        # 모든 부품이 정상인 경우를 정상 데이터로 간주
+        normal_mask = pd.Series(True, index=self.df.index)
+        
+        for component, threshold in NORMAL_THRESHOLDS.items():
+            if component in self.df.columns:
+                normal_mask &= (self.df[component] >= threshold)
+        
+        normal_data = self.df[normal_mask]
+        abnormal_data = self.df[~normal_mask]
+        
+        self.logger.info(f"부품 값 기반 데이터 분포 - 정상: {len(normal_data)}, 비정상: {len(abnormal_data)}")
+        
+        # 센서별 패턴 학습
+        sensor_cols = []
+        for col in self.df.columns:
+            for sensor_prefix in self.sensor_types:
+                if col.startswith(sensor_prefix) and any(stat in col for stat in ['_mean', '_std', '_min', '_max']):
+                    sensor_cols.append(col)
+                    break
+        
+        self.logger.info(f"찾은 센서 컬럼 수: {len(sensor_cols)}")
+        
+        # 센서 패턴 학습
+        for col in sensor_cols:
+            if len(normal_data) > 0:
+                # 정상 데이터가 있으면 사용
+                normal_values = normal_data[col]
+                abnormal_values = abnormal_data[col] if len(abnormal_data) > 0 else pd.Series()
+            else:
+                # 정상 데이터가 없으면 상위 25%를 정상으로 간주
+                threshold = self.df[col].quantile(0.75)
+                normal_values = self.df[self.df[col] >= threshold][col]
+                abnormal_values = self.df[self.df[col] < threshold][col]
+            
+            # 빈 데이터 처리
+            if len(normal_values) == 0:
+                normal_values = self.df[col]
+            
+            self.patterns[col] = {
+                'normal_mean': normal_values.mean(),
+                'normal_std': normal_values.std() if normal_values.std() > 0 else 0.1,
+                'normal_min': normal_values.min(),
+                'normal_max': normal_values.max(),
+                'abnormal_samples': abnormal_values.values if len(abnormal_values) > 0 else []
+            }
+        
+        # 고장 유형별 패턴 학습
+        self.fault_patterns = {}
+        
+        for component in self.fault_components:
+            if component in self.df.columns:
+                normal_value = COMPONENT_NORMAL_VALUES.get(component, self.df[component].max())
+                threshold = NORMAL_THRESHOLDS.get(component, normal_value * 0.9)
+                
+                # 고장 데이터 추출 (임계값 미만)
+                fault_data = self.df[self.df[component] < threshold]
+                
+                if len(fault_data) > 0:
+                    fault_values = fault_data[component].unique()
+                    self.fault_patterns[component] = {
+                        'probability': len(fault_data) / len(self.df),
+                        'normal_value': normal_value,
+                        'threshold': threshold,
+                        'fault_values': sorted(fault_values),  # 정렬하여 저장
+                        'value_range': (fault_data[component].min(), fault_data[component].max()),
+                        'severity_levels': {
+                            'mild': [v for v in fault_values if v >= threshold * 0.7],
+                            'moderate': [v for v in fault_values if threshold * 0.4 <= v < threshold * 0.7],
+                            'severe': [v for v in fault_values if v < threshold * 0.4]
+                        }
+                    }
+                    
+                    self.logger.info(f"{component} 고장 패턴: 정상={normal_value}, "
+                                   f"임계값={threshold}, 고장값={len(fault_values)}개")
+        
+        self.logger.info(f"패턴 학습 완료: {len(self.patterns)} 센서 패턴, {len(self.fault_patterns)} 고장 패턴")
+        
+        # 패턴이 비어있으면 경고
+        if len(self.patterns) == 0:
+            self.logger.warning("⚠️ 센서 패턴이 비어있습니다! CSV 파일 구조를 확인하세요.")
+    
+    def generate_data(self) -> Dict:
+        """유압 시스템 데이터 생성"""
+        timestamp = datetime.now()
+        
+        # 테스트 모드 시나리오 1: 시간대별 명확한 구분
+        if hasattr(self, 'test_mode') and self.test_mode and self.test_scenario == 1:
+            elapsed = time.time() - self.start_time
+            
+            # 시간대별 시나리오 적용
+            if elapsed < 10:
+                # 0-10초: 정상 작동
+                is_fault = False
+                fault_component = None
+                fault_value = None
+                self.logger.info(f"[{elapsed:.1f}초] 시나리오: 정상 작동")
+            elif 10 <= elapsed < 20:
+                # 10-20초: 경미한 이상 (Cooler)
+                is_fault = True
+                fault_component = 'Cooler'
+                if fault_component in self.fault_patterns:
+                    # Cooler의 정상값과 고장값 범위 사용
+                    normal_val = self.component_normal_values.get(fault_component, 3)
+                    fault_value = normal_val * 0.7  # 정상값의 70% (경미한 이상)
+                else:
+                    fault_value = 2.0
+                self.logger.info(f"[{elapsed:.1f}초] 시나리오: Cooler 경미한 이상")
+            elif 20 <= elapsed < 30:
+                # 20-30초: 정상 복구
+                is_fault = False
+                fault_component = None
+                fault_value = None
+                self.logger.info(f"[{elapsed:.1f}초] 시나리오: 정상 복구")
+            elif 30 <= elapsed < 40:
+                # 30-40초: 심각한 고장 (Pump)
+                is_fault = True
+                fault_component = 'Pump'
+                if fault_component in self.fault_patterns:
+                    fault_value = self.fault_patterns[fault_component]['value_range'][0]  # 최소값 (심각)
+                else:
+                    fault_value = 0.0
+                self.logger.info(f"[{elapsed:.1f}초] 시나리오: Pump 심각한 고장")
+            elif 40 <= elapsed < 50:
+                # 40-50초: 복합 고장 (Pump + Valve)
+                is_fault = True
+                fault_component = random.choice(['Pump', 'Valve'])
+                if fault_component in self.fault_patterns:
+                    fault_value = random.uniform(
+                        self.fault_patterns[fault_component]['value_range'][0],
+                        self.fault_patterns[fault_component]['value_range'][1]
+                    )
+                else:
+                    fault_value = random.uniform(0, 1)
+                self.logger.info(f"[{elapsed:.1f}초] 시나리오: {fault_component} 복합 고장")
+            elif 50 <= elapsed < 60:
+                # 50-60초: 점진적 회복
+                is_fault = random.random() < 0.3  # 30% 확률로 가끔 이상
+                if is_fault:
+                    fault_component = random.choice(list(self.fault_patterns.keys())) if self.fault_patterns else 'Cooler'
+                    if fault_component in self.fault_patterns:
+                        normal_val = self.component_normal_values.get(fault_component, 100)
+                        fault_value = normal_val * 0.85  # 정상값의 85% (경미)
+                    else:
+                        fault_value = 2.5
+                else:
+                    fault_component = None
+                    fault_value = None
+                self.logger.info(f"[{elapsed:.1f}초] 시나리오: 점진적 회복")
+            elif 60 <= elapsed < 90:
+                # 60-90초: 간헐적 스파이크 (5초마다)
+                if int(elapsed) % 5 == 0:
+                    is_fault = True
+                    fault_component = random.choice(list(self.fault_patterns.keys())) if self.fault_patterns else 'Valve'
+                    if fault_component in self.fault_patterns:
+                        fault_value = random.uniform(
+                            self.fault_patterns[fault_component]['value_range'][0],
+                            self.fault_patterns[fault_component]['value_range'][1]
+                        )
+                    else:
+                        fault_value = random.uniform(1, 2)
+                    self.logger.info(f"[{elapsed:.1f}초] 시나리오: 간헐적 스파이크 - {fault_component}")
+                else:
+                    is_fault = False
+                    fault_component = None
+                    fault_value = None
+            else:
+                # 90-120초: 완전 정상화
+                is_fault = False
+                fault_component = None
+                fault_value = None
+                self.logger.info(f"[{elapsed:.1f}초] 시나리오: 완전 정상화")
+                
+        else:
+            # 일반 모드: 기존 로직
+            is_fault = random.random() < 0.1
+            fault_component = None
+            fault_value = None
+            
+            if is_fault and self.fault_patterns:
+                fault_component = random.choice(list(self.fault_patterns.keys()))
+                pattern = self.fault_patterns[fault_component]
+                
+                if len(pattern['fault_values']) > 0:
+                    fault_value = random.choice(pattern['fault_values'])
+                else:
+                    fault_value = random.uniform(pattern['value_range'][0], pattern['value_range'][1])
+        
+        # 센서 데이터 생성
+        sensor_data = {}
+        
+        for sensor_name, pattern in self.patterns.items():
+            if is_fault and len(pattern.get('abnormal_samples', [])) > 0:
+                # 고장 시: 이상 패턴에서 샘플링
+                if random.random() < 0.3:  # 30% 확률로 이상값
+                    value = random.choice(pattern['abnormal_samples'])
+                else:
+                    # 정상 범위에서 벗어난 값
+                    value = pattern['normal_mean'] + random.gauss(0, pattern['normal_std'] * 2)
+            else:
+                # 정상 시: 정상 분포에서 샘플링
+                value = random.gauss(pattern['normal_mean'], pattern['normal_std'])
+                value = np.clip(value, pattern['normal_min'], pattern['normal_max'])
+            
+            sensor_data[sensor_name] = float(value)
+        
+        # 전체 데이터 구성
+        data = {
+            'timestamp': timestamp.isoformat(),
+            'sensors': sensor_data,
+            'fault_status': {
+                'is_normal': 0 if is_fault else 1,
+                'fault_component': fault_component,
+                'fault_value': fault_value,
+                'component_normal_value': self.component_normal_values.get(fault_component) if fault_component else None
+            },
+            'topic': 'hydraulic'
+        }
+        
+        # 고장 발생 시 로그
+        if is_fault and fault_component:
+            normal_val = self.component_normal_values.get(fault_component, "알 수 없음")
+            self.logger.warning(f"⚠️ 유압 시스템 이상 감지: {fault_component} (정상: {normal_val}, 현재: {fault_value:.1f})")
+        
+        return data
+
+
+class ManufacturingSimulator(BaseCSVSimulator):
+    """제조 공정 시뮬레이터 - 1분 간격 실시간 데이터"""
+    
+    def __init__(self, csv_path: str):
+        super().__init__(csv_path, "manufacturing")
+        self.time_window = deque(maxlen=60)  # 60분 슬라이딩 윈도우 (딥러닝 입력용)
+        self.energy_history = deque(maxlen=90)  # 과거 90분 에너지 데이터
+        
+    def learn_patterns(self):
+        """제조 데이터 패턴 학습 - 1분 단위 실시간 데이터"""
+        # 시간 정보 추출
+        self.df['Timestamp'] = pd.to_datetime(self.df['Timestamp'])
+        self.df['minute'] = self.df['Timestamp'].dt.minute
+        self.df['hour'] = self.df['Timestamp'].dt.hour
+        
+        # 1. 분 단위 패턴 학습 (더 세밀한 패턴)
+        self.minute_patterns = {}
+        features = ['Temperature (°C)', 'Machine Speed (RPM)', 'Production Quality Score', 
+                   'Vibration Level (mm/s)', 'Energy Consumption (kWh)']
+        
+        # 10분 단위로 그룹화 (0-9분, 10-19분, ...)
+        for minute_group in range(6):  # 0~5 (각 10분 구간)
+            start_min = minute_group * 10
+            end_min = start_min + 10
+            group_data = self.df[(self.df['minute'] >= start_min) & (self.df['minute'] < end_min)]
+            
+            if len(group_data) > 0:
+                self.minute_patterns[minute_group] = {}
+                for feature in features:
+                    self.minute_patterns[minute_group][feature] = {
+                        'mean': group_data[feature].mean(),
+                        'std': group_data[feature].std(),
+                        'min': group_data[feature].min(),
+                        'max': group_data[feature].max()
+                    }
+        
+        # 2. 센서 간 상관관계 학습
+        self.correlations = {
+            'temp_speed': np.corrcoef(self.df['Temperature (°C)'], 
+                                     self.df['Machine Speed (RPM)'])[0, 1],
+            'speed_vibration': np.corrcoef(self.df['Machine Speed (RPM)'], 
+                                          self.df['Vibration Level (mm/s)'])[0, 1],
+            'temp_energy': np.corrcoef(self.df['Temperature (°C)'], 
+                                      self.df['Energy Consumption (kWh)'])[0, 1],
+            'vibration_energy': np.corrcoef(self.df['Vibration Level (mm/s)'], 
+                                           self.df['Energy Consumption (kWh)'])[0, 1]
+        }
+        
+        # 3. 에너지 소비 패턴 학습 (이동평균 적용)
+        self.df['Energy_MA10'] = self.df['Energy Consumption (kWh)'].rolling(window=10, center=True).mean()
+        self.df['Energy_MA10'].fillna(self.df['Energy Consumption (kWh)'], inplace=True)
+        
+        # 4. 최적 조건 패턴
+        optimal_data = self.df[self.df['Optimal Conditions'] == 1]
+        
+        self.optimal_patterns = {
+            'temp_range': (optimal_data['Temperature (°C)'].quantile(0.1), 
+                          optimal_data['Temperature (°C)'].quantile(0.9)),
+            'speed_range': (optimal_data['Machine Speed (RPM)'].quantile(0.1),
+                           optimal_data['Machine Speed (RPM)'].quantile(0.9)),
+            'vibration_threshold': optimal_data['Vibration Level (mm/s)'].quantile(0.95),
+            'energy_efficient': optimal_data['Energy Consumption (kWh)'].median()
+        }
+        
+        # 5. 노이즈 특성 학습
+        self.noise_patterns = {
+            'energy_noise_std': (self.df['Energy Consumption (kWh)'] - self.df['Energy_MA10']).std(),
+            'vibration_spike_prob': len(self.df[self.df['Vibration Level (mm/s)'] > 
+                                       self.df['Vibration Level (mm/s)'].quantile(0.99)]) / len(self.df)
+        }
+        
+        self.logger.info("제조 패턴 학습 완료 (1분 단위 실시간)")
+        self.logger.info(f"상관관계: 온도-속도={self.correlations['temp_speed']:.2f}, "
+                        f"속도-진동={self.correlations['speed_vibration']:.2f}")
+    
+    def generate_correlated_values(self, base_temp: float) -> Dict[str, float]:
+        """상관관계를 고려한 센서값 생성"""
+        # 온도 기반으로 다른 센서값 생성
+        values = {'Temperature (°C)': base_temp}
+        
+        # 속도: 온도와 상관관계 적용
+        speed_base = 3000 + (base_temp - 75) * 20 * self.correlations['temp_speed']
+        values['Machine Speed (RPM)'] = int(np.clip(
+            random.gauss(speed_base, 50),
+            1450, 1550  # 실제 데이터 범위
+        ))
+        
+        # 진동: 속도와 상관관계 적용
+        vibration_base = 0.05 + (values['Machine Speed (RPM)'] - 1500) * 0.0001 * abs(self.correlations['speed_vibration'])
+        values['Vibration Level (mm/s)'] = np.clip(
+            random.gauss(vibration_base, 0.01),
+            0.03, 0.1
+        )
+        
+        # 품질 점수: 최적 조건 근처일수록 높음
+        if self.optimal_patterns['temp_range'][0] <= base_temp <= self.optimal_patterns['temp_range'][1]:
+            quality_base = random.uniform(8.5, 9.0)
+        else:
+            quality_base = random.uniform(7.5, 8.5)
+        values['Production Quality Score'] = quality_base
+        
+        # 에너지: 온도, 속도, 진동과 상관관계 적용
+        energy_base = 1.5
+        energy_base += (base_temp - 75) * 0.01 * abs(self.correlations['temp_energy'])
+        energy_base += (values['Machine Speed (RPM)'] - 1500) * 0.001
+        energy_base += values['Vibration Level (mm/s)'] * 10 * abs(self.correlations['vibration_energy'])
+        
+        # 노이즈 추가
+        if random.random() < 0.1:  # 10% 확률로 노이즈
+            energy_base += random.gauss(0, self.noise_patterns['energy_noise_std'])
+        
+        values['Energy Consumption (kWh)'] = np.clip(energy_base, 0.5, 3.0)
+        
+        return values
+    
+    def predict_energy_30min(self) -> List[float]:
+        """과거 60분 데이터로 미래 30분 에너지 예측 (간단한 시뮬레이션)"""
+        if len(self.energy_history) < 60:
+            # 데이터 부족 시 현재 값 반복
+            return [self.energy_history[-1] if self.energy_history else 1.5] * 30
+        
+        # 최근 60분 데이터
+        recent_60 = list(self.energy_history)[-60:]
+        
+        # 간단한 예측: 추세 + 주기성 + 노이즈
+        trend = (recent_60[-1] - recent_60[0]) / 60  # 선형 추세
+        mean_energy = np.mean(recent_60)
+        
+        predictions = []
+        for i in range(30):
+            # 기본값 = 평균 + 추세
+            pred = mean_energy + trend * (60 + i)
+            
+            # 주기성 추가 (10분 주기)
+            pred += 0.1 * np.sin(2 * np.pi * i / 10)
+            
+            # 노이즈
+            pred += random.gauss(0, 0.05)
+            
+            predictions.append(np.clip(pred, 0.5, 3.0))
+        
+        return predictions
+    
+    def generate_data(self) -> Dict:
+        """제조 공정 데이터 생성 - 1분 간격"""
+        timestamp = datetime.now()
+        current_minute = timestamp.minute
+        minute_group = current_minute // 10  # 0~5
+        
+        # 현재 시간대 패턴 가져오기
+        if minute_group in self.minute_patterns:
+            pattern = self.minute_patterns[minute_group]
+        else:
+            pattern = self.minute_patterns[0]  # 기본값
+        
+        # 기본 온도 생성
+        temp_pattern = pattern['Temperature (°C)']
+        base_temp = random.gauss(temp_pattern['mean'], temp_pattern['std'] * 0.5)
+        base_temp = np.clip(base_temp, temp_pattern['min'], temp_pattern['max'])
+        
+        # 상관관계 기반 센서값 생성
+        current_data = self.generate_correlated_values(base_temp)
+        
+        # 최적 조건 판단
+        is_optimal = (
+            self.optimal_patterns['temp_range'][0] <= current_data['Temperature (°C)'] <= self.optimal_patterns['temp_range'][1] and
+            current_data['Vibration Level (mm/s)'] < self.optimal_patterns['vibration_threshold'] and
+            current_data['Energy Consumption (kWh)'] < self.optimal_patterns['energy_efficient'] * 1.2
+        )
+        
+        # 에너지 히스토리 업데이트
+        self.energy_history.append(current_data['Energy Consumption (kWh)'])
+        
+        # 30분 후 에너지 예측
+        energy_predictions = self.predict_energy_30min()
+        
+        # 시계열 윈도우 업데이트 (딥러닝 입력용)
+        self.time_window.append({
+            'temperature': current_data['Temperature (°C)'],
+            'speed': current_data['Machine Speed (RPM)'],
+            'vibration': current_data['Vibration Level (mm/s)'],
+            'energy': current_data['Energy Consumption (kWh)']
+        })
+        
+        # 이상 감지 (이동평균 기반)
+        energy_anomaly = False
+        if len(self.energy_history) >= 10:
+            recent_ma = np.mean(list(self.energy_history)[-10:])
+            if abs(current_data['Energy Consumption (kWh)'] - recent_ma) > 0.5:
+                energy_anomaly = True
+        
+        # 진동 스파이크 감지
+        vibration_spike = current_data['Vibration Level (mm/s)'] > 0.08
+        
+        # 전체 데이터 구성
+        data = {
+            'timestamp': timestamp.isoformat(),
+            'sensors': current_data,
+            'predictions': {
+                'energy_next_30min': energy_predictions,
+                'energy_next_hour_avg': np.mean(energy_predictions),
+                'optimal_conditions': 1 if is_optimal else 0,
+                'energy_anomaly': energy_anomaly,
+                'vibration_spike': vibration_spike
+            },
+            'time_window': list(self.time_window) if len(self.time_window) == 60 else None,  # 딥러닝 입력용
+            'topic': 'manufacturing'
+        }
+        
+        # 이상 상황 로그
+        if energy_anomaly:
+            self.logger.warning(f"⚡ 에너지 소비 이상 감지: {current_data['Energy Consumption (kWh)']:.2f} kWh (이동평균 대비)")
+        if vibration_spike:
+            self.logger.warning(f"📊 진동 스파이크 감지: {current_data['Vibration Level (mm/s)']:.3f} mm/s")
+        
+        return data
+
+
+class DualCSVSimulator:
+    """듀얼 시뮬레이터 관리자"""
+    
+    def __init__(self, hydraulic_csv: str, manufacturing_csv: str):
+        self.hydraulic_sim = HydraulicSimulator(hydraulic_csv)
+        self.manufacturing_sim = ManufacturingSimulator(manufacturing_csv)
+        self.threads = []
+        
+    def load_all(self):
+        """모든 데이터 로드"""
+        self.hydraulic_sim.load_data()
+        self.manufacturing_sim.load_data()
+        
+    def start(self, hydraulic_interval: float = 1.0, manufacturing_interval: float = 5.0, 
+              test_mode: bool = True, test_scenario: int = 1):
+        """두 시뮬레이터 동시 실행"""
+        # 유압 시뮬레이터 스레드
+        hydraulic_thread = threading.Thread(
+            target=self.hydraulic_sim.run,
+            args=(hydraulic_interval, test_mode, test_scenario),
+            daemon=True
+        )
+        
+        # 제조 시뮬레이터 스레드
+        manufacturing_thread = threading.Thread(
+            target=self.manufacturing_sim.run,
+            args=(manufacturing_interval, test_mode, test_scenario),
+            daemon=True
+        )
+        
+        self.threads = [hydraulic_thread, manufacturing_thread]
+        
+        # 스레드 시작
+        for thread in self.threads:
             thread.start()
-            self.threads.append(thread)
         
-        # 메인 루프
+        print("🚀 듀얼 CSV 시뮬레이터 시작!")
+        if test_mode:
+            print(f"🧪 테스트 모드: 시나리오 {test_scenario} (2분간 실행)")
+            print("📋 시나리오 1: 시간대별 명확한 구분")
+            print("  - 0-10초: 정상")
+            print("  - 10-20초: 경미한 이상")
+            print("  - 20-30초: 정상 복구")
+            print("  - 30-40초: 심각한 고장")
+            print("  - 40-50초: 복합 고장")
+            print("  - 50-60초: 점진적 회복")
+            print("  - 60-90초: 간헐적 스파이크")
+            print("  - 90-120초: 완전 정상화")
+        print("📊 유압 시스템: 부품 고장 조기 감지")
+        print("⚡ 제조 공정: 에너지 소비 예측")
+        print("-" * 50)
+        
         try:
-            while self.running:
-                time.sleep(1)
+            # 메인 스레드 유지
+            for thread in self.threads:
+                thread.join()
         except KeyboardInterrupt:
             self.stop()
     
     def stop(self):
-        """시뮬레이션 중지"""
-        logger.info("시뮬레이션 중지 중...")
-        self.running = False
+        """모든 시뮬레이터 중지"""
+        print("\n시뮬레이터 중지 중...")
+        self.hydraulic_sim.stop()
+        self.manufacturing_sim.stop()
         
-        # 남은 데이터 전송
-        self.send_sensor_data()
-        self.send_alerts()
-        
-        # 스레드 종료 대기
         for thread in self.threads:
             thread.join()
         
-        logger.info("시뮬레이션 완전 중지")
-    
-    def run_batch_scenario(self, scenario_sequence: List[Tuple[Scenario, int]]):
-        """배치 시나리오 실행"""
-        for scenario, duration in scenario_sequence:
-            logger.info(f"시나리오 '{scenario.value}' {duration}초 동안 실행")
-            self.scenario = scenario
-            time.sleep(duration)
-        
-        self.stop()
+        print("모든 시뮬레이터 중지 완료")
 
-class DataGenerator:
-    """과거 데이터 생성기 (테스트용)"""
-    
-    @staticmethod
-    def generate_historical_data(equipment_id: str, sensor_type: str, 
-                               start_date: datetime, end_date: datetime,
-                               interval_minutes: int = 5) -> pd.DataFrame:
-        """과거 데이터 생성"""
-        timestamps = pd.date_range(start=start_date, end=end_date, 
-                                 freq=f'{interval_minutes}min')
-        
-        # 기본 패턴 생성
-        base_pattern = 50 + 10 * np.sin(2 * np.pi * np.arange(len(timestamps)) / (24 * 60 / interval_minutes))
-        
-        # 노이즈 추가
-        noise = np.random.normal(0, 2, len(timestamps))
-        
-        # 이상값 추가 (5% 확률)
-        anomalies = np.random.random(len(timestamps)) < 0.05
-        values = base_pattern + noise
-        values[anomalies] = values[anomalies] * 1.5
-        
-        df = pd.DataFrame({
-            'timestamp': timestamps,
-            'equipment': equipment_id,
-            'sensor_type': sensor_type,
-            'value': values
-        })
-        
-        return df
-    
-    @staticmethod
-    def inject_historical_data(df: pd.DataFrame):
-        """과거 데이터를 API에 주입"""
-        for _, row in df.iterrows():
-            data = {
-                "equipment": row['equipment'],
-                "sensor_type": row['sensor_type'],
-                "value": row['value'],
-                "timestamp": row['timestamp'].isoformat()
-            }
-            
-            try:
-                response = requests.post(
-                    f"{API_BASE_URL}/sensors",
-                    json=data,
-                    timeout=5
-                )
-                if response.status_code != 200:
-                    logger.error(f"데이터 주입 실패: {response.status_code}")
-            except Exception as e:
-                logger.error(f"데이터 주입 오류: {e}")
-        
-        logger.info(f"과거 데이터 {len(df)}건 주입 완료")
 
 # 사용 예제
 if __name__ == "__main__":
-    # 시뮬레이터 생성
-    simulator = IoTDataSimulator()
+    # CSV 파일 경로 설정
+    HYDRAULIC_CSV = "C:/posco/data/hydraulic_processed_data.csv"
+    MANUFACTURING_CSV = "C:/posco/data/Manufacturing_dataset.csv"
     
-    # 테스트용: 알림이 많이 생성되는 시나리오 조합
-    print("🚀 IoT 데이터 시뮬레이터 시작!")
-    print("📊 다양한 시나리오로 데이터와 알림을 생성합니다...")
-    print("-" * 50)
+    # 듀얼 시뮬레이터 생성
+    simulator = DualCSVSimulator(HYDRAULIC_CSV, MANUFACTURING_CSV)
     
-    # 옵션 1: 빠른 테스트 (알림 많이 생성)
-    scenario_sequence = [
-        (Scenario.NORMAL, 30),           # 정상 운영 30초 (가끔 스파이크)
-        (Scenario.OVERLOAD, 20),         # 과부하 20초 (알림 다수 발생)
-        (Scenario.SUDDEN_FAILURE, 15),   # 급작스런 고장 15초 (알림 폭발)
-        (Scenario.SENSOR_MALFUNCTION, 10), # 센서 오작동 10초
-        (Scenario.GRADUAL_DEGRADATION, 30), # 점진적 악화 30초
-        (Scenario.CYBER_ATTACK, 15),     # 사이버 공격 패턴 15초
-        (Scenario.NORMAL, 30),           # 정상 복구 30초
-    ]
+    try:
+        # 데이터 로드
+        simulator.load_all()
+        
+        # 시뮬레이터 시작 - 테스트 모드, 시나리오 1
+        # 유압: 0.5초마다 (빠른 테스트), 제조: 2초마다
+        simulator.start(
+            hydraulic_interval=0.5,      # 더 빠른 주기로 테스트
+            manufacturing_interval=2.0,   # 더 빠른 주기로 테스트
+            test_mode=True,              # 테스트 모드 활성화
+            test_scenario=1              # 시나리오 1: 시간대별 명확한 구분
+        )
+        
+    except Exception as e:
+        print(f"오류 발생: {e}")
+        
+    # 개별 실행 옵션 (필요시 주석 해제)
+    # # 유압 시뮬레이터만 실행
+    # hydraulic_sim = HydraulicSimulator(HYDRAULIC_CSV)
+    # hydraulic_sim.load_data()
+    # hydraulic_sim.run(interval=1.0)
     
-    # 배치 시나리오를 별도 스레드에서 실행
-    threading.Thread(
-        target=simulator.run_batch_scenario,
-        args=(scenario_sequence,),
-        daemon=True
-    ).start()
-    
-    # 동시에 정상 시뮬레이션도 실행 (시간 가속 3배)
-    simulator.start(scenario=Scenario.NORMAL, time_acceleration=3.0)
-    
-    # 옵션 2: 특정 시나리오만 실행 (주석 해제하여 사용)
-    # simulator.start(scenario=Scenario.SUDDEN_FAILURE, time_acceleration=5.0)
-    
-    # 옵션 3: 과거 데이터 대량 생성 (주석 해제하여 사용)
-    # print("\n📈 과거 데이터 생성 중...")
-    # generator = DataGenerator()
-    # for equipment_id in ["press_001", "weld_001", "assemble_001"]:
-    #     for sensor_type in ["temperature", "pressure", "vibration"]:
-    #         historical_data = generator.generate_historical_data(
-    #             equipment_id=equipment_id,
-    #             sensor_type=sensor_type,
-    #             start_date=datetime.now() - timedelta(hours=2),
-    #             end_date=datetime.now(),
-    #             interval_minutes=5
-    #         )
-    #         generator.inject_historical_data(historical_data)
-    #         print(f"✅ {equipment_id}/{sensor_type} 데이터 주입 완료")
+    # # 제조 시뮬레이터만 실행
+    # manufacturing_sim = ManufacturingSimulator(MANUFACTURING_CSV)
+    # manufacturing_sim.load_data()
+    # manufacturing_sim.run(interval=5.0)
