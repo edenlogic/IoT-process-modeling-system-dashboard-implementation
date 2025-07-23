@@ -10,6 +10,49 @@ import json
 import io
 import base64
 
+# FastAPI 서버 URL
+API_BASE_URL = "http://localhost:8000"
+
+def get_sensor_data_from_api(use_real_api=True):
+    """FastAPI에서 센서 데이터 가져오기"""
+    try:
+        response = requests.get(f"{API_BASE_URL}/api/sensor_data?use_real_api={str(use_real_api).lower()}", timeout=5)
+        if response.status_code == 200:
+            return response.json()
+    except Exception as e:
+        st.error(f"센서 데이터 API 연결 오류: {e}")
+    return None
+
+def get_equipment_status_from_api(use_real_api=True):
+    """FastAPI에서 설비 상태 가져오기"""
+    try:
+        response = requests.get(f"{API_BASE_URL}/api/equipment_status?use_real_api={str(use_real_api).lower()}", timeout=5)
+        if response.status_code == 200:
+            return response.json()
+    except Exception as e:
+        st.error(f"설비 상태 API 연결 오류: {e}")
+    return []
+
+def get_alerts_from_api(use_real_api=True):
+    """FastAPI에서 알림 데이터 가져오기"""
+    try:
+        response = requests.get(f"{API_BASE_URL}/api/alerts?use_real_api={str(use_real_api).lower()}", timeout=5)
+        if response.status_code == 200:
+            return response.json()
+    except Exception as e:
+        st.error(f"알림 데이터 API 연결 오류: {e}")
+    return []
+
+def get_quality_trend_from_api(use_real_api=True):
+    """FastAPI에서 품질 추세 데이터 가져오기"""
+    try:
+        response = requests.get(f"{API_BASE_URL}/api/quality_trend?use_real_api={str(use_real_api).lower()}", timeout=5)
+        if response.status_code == 200:
+            return response.json()
+    except Exception as e:
+        st.error(f"품질 추세 API 연결 오류: {e}")
+    return None
+
 # 페이지 설정
 st.set_page_config(
     page_title="POSCO MOBILITY IoT 대시보드",
@@ -941,7 +984,6 @@ def show_equipment_detail(equipment_id):
 # 메인 대시보드
 
 def main():
-    # columns+button 한 줄, 가로 탭 형태로 배치 (세로 쌓임 방지)
     st.markdown(
         '''
         <style>
@@ -975,19 +1017,67 @@ def main():
         unsafe_allow_html=True
     )
 
-    # st.tabs로 상단 네비게이션 구현, 각 탭별로 다른 콘텐츠 표시
     tab_titles = ["대시보드", "설비 관리", "알림 관리", "리포트", "설정"]
     tabs = st.tabs(tab_titles)
 
+    # ----------- 사이드바(필터, AI 연동, 새로고침) 복원 -----------
+    with st.sidebar:
+        st.markdown('<div style="font-size:18px; font-weight:bold; margin-bottom:0.5rem; margin-top:0.5rem;">필터 설정</div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-size:13px; color:#64748b; margin-bottom:0.2rem; margin-top:0.7rem;">공정 선택</div>', unsafe_allow_html=True)
+        process = st.selectbox("", ["전체 공정", "프레스 공정", "용접 공정", "조립 공정", "검사 공정"], label_visibility="collapsed")
+        st.markdown('<div style="font-size:13px; color:#64748b; margin-bottom:0.2rem; margin-top:0.7rem;">설비 필터</div>', unsafe_allow_html=True)
+        equipment_list = generate_equipment_status()
+        equipment_names_full = [eq['name'] for eq in equipment_list]
+        equipment_names_short = []
+        for name in equipment_names_full:
+            if '프레스기' in name:
+                short_name = name.replace('프레스기', '프레스')
+            elif '용접기' in name:
+                short_name = name.replace('용접기', '용접')
+            elif '조립기' in name:
+                short_name = name.replace('조립기', '조립')
+            elif '검사기' in name:
+                short_name = name.replace('검사기', '검사')
+            elif '포장기' in name:
+                short_name = name.replace('포장기', '포장')
+            else:
+                short_name = name
+            equipment_names_short.append(short_name)
+        equipment_filter_short = st.multiselect(
+            "",
+            equipment_names_short,
+            default=equipment_names_short,
+            label_visibility="collapsed"
+        )
+        equipment_filter = []
+        for short_name in equipment_filter_short:
+            for i, full_name in enumerate(equipment_names_full):
+                if equipment_names_short[i] == short_name:
+                    equipment_filter.append(full_name)
+                    break
+        st.markdown('<hr style="margin:1.5rem 0 1rem 0; border: none; border-top: 1.5px solid #e2e8f0;" />', unsafe_allow_html=True)
+        st.markdown('<div style="font-size:18px; font-weight:bold; margin-bottom:0.5rem; margin-top:0.5rem;">날짜 선택</div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-size:13px; color:#64748b; margin-bottom:0.2rem; margin-top:0.7rem;">일자 선택</div>', unsafe_allow_html=True)
+        selected_date = st.date_input("", datetime.now().date(), label_visibility="collapsed")
+        st.markdown('<div style="font-size:13px; color:#64748b; margin-bottom:0.2rem; margin-top:0.7rem;">기간 선택</div>', unsafe_allow_html=True)
+        date_range = st.date_input(
+            "",
+            value=(datetime.now().date() - timedelta(days=7), datetime.now().date()),
+            label_visibility="collapsed"
+        )
+        st.markdown('<hr style="margin:1.5rem 0 1rem 0; border: none; border-top: 1.5px solid #e2e8f0;" />', unsafe_allow_html=True)
+        # 연동 토글 항상 하단에
+        use_real_api = st.toggle("실제 API 연동", value=False, help="실제 API에서 데이터를 받아옵니다.")
+        use_ai_model = st.toggle("AI 모델 연동", value=False, help="AI 예측/진단 기능을 활성화합니다.")
+
     with tabs[0]:  # 대시보드
-        # ----------- 한 화면 대시보드(FullHD 기준, 스크롤 없음) -----------
         st.markdown('<div class="main-header no-translate" translate="no" style="margin-bottom:0.5rem; font-size:1.5rem;">🏭 POSCO MOBILITY IoT 대시보드</div>', unsafe_allow_html=True)
         # KPI+AI 카드 2행 3열 (총 6개)
         row1 = st.columns(3, gap="small")
         row2 = st.columns(3, gap="small")
         production_kpi = generate_production_kpi()
         quality_data = generate_quality_trend()
-        alerts = generate_alert_data()
+        alerts = get_alerts_from_api(use_real_api) if use_real_api else generate_alert_data()
         active_alerts = len([a for a in alerts if a.get('status', '미처리') != '완료'])
         current_defect_rate = quality_data['defect_rate'].iloc[-1]
         # 1행: 가동률, 불량률, 생산량
@@ -1043,7 +1133,7 @@ def main():
         # 1. 설비 상태
         with row_top[0]:
             st.markdown('<div class="chart-title no-translate" translate="no" style="font-size:1rem; margin-bottom:0.2rem;">설비 상태</div>', unsafe_allow_html=True)
-            equipment_status = generate_equipment_status()[:6]
+            equipment_status = get_equipment_status_from_api(use_real_api) if use_real_api else generate_equipment_status()[:6]
             table_data = []
             for eq in equipment_status:
                 status_emoji = {'정상':'🟢','주의':'🟠','오류':'🔴'}.get(eq['status'],'🟢')
@@ -1057,36 +1147,77 @@ def main():
         # 2. 실시간 센서
         with row_top[1]:
             st.markdown('<div class="chart-title no-translate" translate="no" style="font-size:1rem; margin-bottom:0.2rem;">실시간 센서</div>', unsafe_allow_html=True)
-            sensor_data = generate_sensor_data()
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(
-                x=sensor_data['time'],
-                y=sensor_data['temperature'],
-                mode='lines',
-                name='온도',
-                line=dict(color='#ef4444', width=2)
-            ))
-            fig.add_trace(go.Scatter(
-                x=sensor_data['time'],
-                y=sensor_data['pressure'],
-                mode='lines',
-                name='압력',
-                line=dict(color='#3b82f6', width=2),
-                yaxis='y2'
-            ))
-            fig.update_layout(
-                height=200,
-                margin=dict(l=8, r=8, t=8, b=8),
-                showlegend=True,
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=9)),
-                yaxis=dict(title={'text':"온도", 'font':{'size':9}}, side="left"),
-                yaxis2=dict(title="압력", overlaying="y", side="right"),
-                xaxis=dict(title={'text':"시간", 'font':{'size':9}}),
-                plot_bgcolor='white',
-                paper_bgcolor='white',
-                font=dict(color='#1e293b', size=9)
-            )
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            # FastAPI에서 센서 데이터 가져오기
+            sensor_data = get_sensor_data_from_api(use_real_api)
+            if sensor_data and use_real_api:
+                # 실제 API 데이터로 그래프 그리기
+                fig = go.Figure()
+                if 'temperature' in sensor_data and sensor_data['temperature']:
+                    temp_times = [d['timestamp'] for d in sensor_data['temperature']]
+                    temp_values = [d['value'] for d in sensor_data['temperature']]
+                    fig.add_trace(go.Scatter(
+                        x=temp_times,
+                        y=temp_values,
+                        mode='lines',
+                        name='온도',
+                        line=dict(color='#ef4444', width=2)
+                    ))
+                if 'pressure' in sensor_data and sensor_data['pressure']:
+                    pres_times = [d['timestamp'] for d in sensor_data['pressure']]
+                    pres_values = [d['value'] for d in sensor_data['pressure']]
+                    fig.add_trace(go.Scatter(
+                        x=pres_times,
+                        y=pres_values,
+                        mode='lines',
+                        name='압력',
+                        line=dict(color='#3b82f6', width=2),
+                        yaxis='y2'
+                    ))
+                fig.update_layout(
+                    height=200,
+                    margin=dict(l=8, r=8, t=8, b=8),
+                    showlegend=True,
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=9)),
+                    yaxis=dict(title={'text':"온도", 'font':{'size':9}}, side="left"),
+                    yaxis2=dict(title="압력", overlaying="y", side="right"),
+                    xaxis=dict(title={'text':"시간", 'font':{'size':9}}),
+                    plot_bgcolor='white',
+                    paper_bgcolor='white',
+                    font=dict(color='#1e293b', size=9)
+                )
+                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            else:
+                # 더미 데이터 사용
+                sensor_data = generate_sensor_data()
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(
+                    x=sensor_data['time'],
+                    y=sensor_data['temperature'],
+                    mode='lines',
+                    name='온도',
+                    line=dict(color='#ef4444', width=2)
+                ))
+                fig.add_trace(go.Scatter(
+                    x=sensor_data['time'],
+                    y=sensor_data['pressure'],
+                    mode='lines',
+                    name='압력',
+                    line=dict(color='#3b82f6', width=2),
+                    yaxis='y2'
+                ))
+                fig.update_layout(
+                    height=200,
+                    margin=dict(l=8, r=8, t=8, b=8),
+                    showlegend=True,
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=9)),
+                    yaxis=dict(title={'text':"온도", 'font':{'size':9}}, side="left"),
+                    yaxis2=dict(title="압력", overlaying="y", side="right"),
+                    xaxis=dict(title={'text':"시간", 'font':{'size':9}}),
+                    plot_bgcolor='white',
+                    paper_bgcolor='white',
+                    font=dict(color='#1e293b', size=9)
+                )
+                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
         # 3. 품질/생산 트렌드
         with row_top[2]:
             st.markdown('<div class="chart-title no-translate" translate="no" style="font-size:1rem; margin-bottom:0.2rem;">품질/생산 트렌드</div>', unsafe_allow_html=True)
@@ -1259,56 +1390,6 @@ def main():
         theme = st.selectbox("테마", ["라이트", "다크"], index=0)
         st.button("구현 준비 중", disabled=True, key="settings_ready_btn")
         st.info("사용자별/권한별 설정, 알림 수신 방법(카톡/이메일), 관리자 로그 등은 추후 확장 예정입니다.")
-
-    # ----------- 사이드바(필터, AI 연동, 새로고침) 복원 -----------
-    with st.sidebar:
-        st.markdown('<div style="font-size:18px; font-weight:bold; margin-bottom:0.5rem; margin-top:0.5rem;">필터 설정</div>', unsafe_allow_html=True)
-        st.markdown('<div style="font-size:13px; color:#64748b; margin-bottom:0.2rem; margin-top:0.7rem;">공정 선택</div>', unsafe_allow_html=True)
-        process = st.selectbox("", ["전체 공정", "프레스 공정", "용접 공정", "조립 공정", "검사 공정"], label_visibility="collapsed")
-        st.markdown('<div style="font-size:13px; color:#64748b; margin-bottom:0.2rem; margin-top:0.7rem;">설비 필터</div>', unsafe_allow_html=True)
-        equipment_list = generate_equipment_status()
-        equipment_names_full = [eq['name'] for eq in equipment_list]
-        equipment_names_short = []
-        for name in equipment_names_full:
-            if '프레스기' in name:
-                short_name = name.replace('프레스기', '프레스')
-            elif '용접기' in name:
-                short_name = name.replace('용접기', '용접')
-            elif '조립기' in name:
-                short_name = name.replace('조립기', '조립')
-            elif '검사기' in name:
-                short_name = name.replace('검사기', '검사')
-            elif '포장기' in name:
-                short_name = name.replace('포장기', '포장')
-            else:
-                short_name = name
-            equipment_names_short.append(short_name)
-        equipment_filter_short = st.multiselect(
-            "",
-            equipment_names_short,
-            default=equipment_names_short,
-            label_visibility="collapsed"
-        )
-        equipment_filter = []
-        for short_name in equipment_filter_short:
-            for i, full_name in enumerate(equipment_names_full):
-                if equipment_names_short[i] == short_name:
-                    equipment_filter.append(full_name)
-                    break
-        st.markdown('<hr style="margin:1rem 0 0.5rem 0; border: none; border-top: 1px solid #e2e8f0;" />', unsafe_allow_html=True)
-        st.markdown('<div style="font-size:18px; font-weight:bold; margin-bottom:0.5rem; margin-top:0.5rem;">날짜 선택</div>', unsafe_allow_html=True)
-        st.markdown('<div style="font-size:13px; color:#64748b; margin-bottom:0.2rem; margin-top:0.7rem;">일자 선택</div>', unsafe_allow_html=True)
-        selected_date = st.date_input("", datetime.now().date(), label_visibility="collapsed")
-        st.markdown('<div style="font-size:13px; color:#64748b; margin-bottom:0.2rem; margin-top:0.7rem;">기간 선택</div>', unsafe_allow_html=True)
-        date_range = st.date_input(
-            "",
-            value=(datetime.now().date() - timedelta(days=7), datetime.now().date()),
-            label_visibility="collapsed"
-        )
-        st.markdown('<hr style="margin:1.5rem 0 1rem 0; border: none; border-top: 1.5px solid #e2e8f0;" />', unsafe_allow_html=True)
-        # 연동 토글 항상 하단에
-        use_real_api = st.toggle("실제 API 연동", value=False, help="실제 API에서 데이터를 받아옵니다.")
-        use_ai_model = st.toggle("AI 모델 연동", value=False, help="AI 예측/진단 기능을 활성화합니다.")
 
 if __name__ == "__main__":
     main()

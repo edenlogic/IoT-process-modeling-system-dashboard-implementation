@@ -460,8 +460,13 @@
         
         // 페이지 로드 시 데이터 로드
         $(document).ready(function() {
+            console.log('document ready');
             loadAllData();
             setupAutoRefresh();
+            // 데이터 소스(실제/더미) 변경 시 즉시 데이터 새로고침
+            $('#dataSource').change(function() {
+                loadAllData();
+            });
         });
         
         // 자동 새로고침 설정
@@ -488,27 +493,32 @@
         
         // 센서 데이터 로드
         function loadSensorData() {
-            $.get('/api/sensor_data')
+            console.log('loadSensorData called');
+            const useRealApi = $('#dataSource').val();
+            $.get(`/api/sensor_data?use_real_api=${useRealApi}`)
                 .done(function(data) {
+                    const tempX = data.temperature.map(d => d.timestamp);
+                    const tempY = data.temperature.map(d => d.value);
+                    const presX = data.pressure.map(d => d.timestamp);
+                    const presY = data.pressure.map(d => d.value);
+                    console.log('tempX:', tempX, 'tempY:', tempY, 'presX:', presX, 'presY:', presY); 
                     const trace1 = {
-                        x: data.time,
-                        y: data.temperature,
+                        x: tempX,
+                        y: tempY,
                         type: 'scatter',
                         mode: 'lines',
                         name: '온도 (°C)',
                         line: {color: '#ef4444', width: 2}
                     };
-                    
                     const trace2 = {
-                        x: data.time,
-                        y: data.pressure,
+                        x: presX,
+                        y: presY,
                         type: 'scatter',
                         mode: 'lines',
                         name: '압력 (bar)',
                         line: {color: '#3b82f6', width: 2},
                         yaxis: 'y2'
                     };
-                    
                     const layout = {
                         height: 320,
                         margin: {l: 50, r: 50, t: 20, b: 40},
@@ -518,7 +528,6 @@
                         yaxis2: {title: "압력 (bar)", overlaying: "y", side: "right"},
                         xaxis: {title: "시간"}
                     };
-                    
                     Plotly.newPlot('sensorChart', [trace1, trace2], layout);
                 })
                 .fail(function() {
@@ -528,7 +537,8 @@
         
         // 설비 상태 로드
         function loadEquipmentStatus() {
-            $.get('/api/equipment_status')
+            const useRealApi = $('#dataSource').val();
+            $.get(`/api/equipment_status?use_real_api=${useRealApi}`)
                 .done(function(data) {
                     if (data.length === 0) {
                         $('#equipmentStatus').html(`
@@ -642,7 +652,8 @@
         
         // 품질 추세 로드
         function loadQualityTrend() {
-            $.get('/api/quality_trend')
+            const useRealApi = $('#dataSource').val();
+            $.get(`/api/quality_trend?use_real_api=${useRealApi}`)
                 .done(function(data) {
                     const days = data.map(item => item.day);
                     const rates = data.map(item => item.quality_rate);
