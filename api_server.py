@@ -270,6 +270,11 @@ def get_quality_trend():
         'defect_rates': defect_rates
     }
 
+# 시뮬레이터용 품질 추세 POST 엔드포인트
+@app.post("/api/quality_trend")
+def post_quality_trend(data: dict):
+    return {"status": "ok", "message": "품질 추세 데이터가 업데이트되었습니다."}
+
 # 대시보드용 생산성 KPI (더미 데이터)
 @app.get("/api/production_kpi")
 def get_production_kpi():
@@ -285,6 +290,42 @@ def get_production_kpi():
         'performance': 92.8,
         'quality': 97.6
     }
+
+# 시뮬레이터용 생산성 KPI POST 엔드포인트
+@app.post("/api/production_kpi")
+def post_production_kpi(data: dict):
+    return {"status": "ok", "message": "생산성 KPI 데이터가 업데이트되었습니다."}
+
+# 데이터베이스 초기화 (기존 데이터 삭제)
+@app.post("/clear_data")
+def clear_data():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    try:
+        # 기존 데이터 삭제
+        c.execute('DELETE FROM sensor_data')
+        c.execute('DELETE FROM alerts')
+        c.execute('DELETE FROM equipment_status')
+        
+        # 장비 초기 데이터 다시 삽입
+        initial_equipment = [
+            ("press_001", "프레스기 #001", "정상", 98.2, "프레스", "2024-01-15"),
+            ("press_002", "프레스기 #002", "주의", 78.5, "프레스", "2024-01-10"),
+            ("weld_001", "용접기 #001", "정상", 89.3, "용접", "2024-01-12"),
+            ("weld_002", "용접기 #002", "오류", 0.0, "용접", "2024-01-08"),
+            ("assemble_001", "조립기 #001", "정상", 96.1, "조립", "2024-01-14"),
+            ("inspect_001", "검사기 #001", "오류", 0.0, "검사", "2024-01-05")
+        ]
+        c.executemany('''INSERT OR IGNORE INTO equipment_status \
+            (id, name, status, efficiency, type, last_maintenance) VALUES (?, ?, ?, ?, ?, ?)''', initial_equipment)
+        
+        conn.commit()
+        return {"status": "ok", "message": "데이터베이스가 초기화되었습니다."}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"데이터베이스 초기화 실패: {str(e)}")
+    finally:
+        conn.close()
 
 # 헬스체크
 @app.get("/health")

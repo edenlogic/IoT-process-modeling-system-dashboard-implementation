@@ -9,9 +9,20 @@ import requests
 import json
 import io
 import base64
+import threading
 
 # FastAPI 서버 URL
 API_BASE_URL = "http://localhost:8000"
+
+# 실시간 데이터 갱신을 위한 전역 변수
+if 'sensor_container' not in st.session_state:
+    st.session_state.sensor_container = None
+if 'alert_container' not in st.session_state:
+    st.session_state.alert_container = None
+if 'equipment_container' not in st.session_state:
+    st.session_state.equipment_container = None
+if 'last_update' not in st.session_state:
+    st.session_state.last_update = time.time()
 
 def get_sensor_data_from_api(use_real_api=True):
     """FastAPI에서 센서 데이터 가져오기"""
@@ -772,7 +783,6 @@ if 'equipment_details' not in st.session_state:
     st.session_state.equipment_details = {}
 
 # 데이터 생성 함수들
-@st.cache_data(ttl=60)  # 1분마다 캐시 갱신
 def generate_sensor_data():
     """실시간 센서 데이터 생성"""
     times = pd.date_range(start=datetime.now() - timedelta(hours=2), end=datetime.now(), freq='5min')
@@ -793,7 +803,6 @@ def generate_sensor_data():
         'vibration': vibration
     })
 
-@st.cache_data(ttl=60)
 def generate_equipment_status():
     """설비 상태 데이터 생성"""
     equipment = [
@@ -848,7 +857,6 @@ def get_alerts_data():
         st.error(f"API 연결 오류: {e}")
     return []
 
-@st.cache_data(ttl=60)
 def generate_alert_data():
     """이상 알림 데이터 생성 (더미 데이터)"""
     alerts = [
@@ -871,7 +879,6 @@ def generate_alert_data():
     ]
     return alerts
 
-@st.cache_data(ttl=60)
 def generate_quality_trend():
     """품질 추세 데이터 생성"""
     days = ['월', '화', '수', '목', '금', '토', '일']
@@ -886,7 +893,6 @@ def generate_quality_trend():
         'defect_rate': defect_rates
     })
 
-@st.cache_data(ttl=60)
 def generate_production_kpi():
     """생산성 KPI 데이터 생성"""
     return {
@@ -912,6 +918,150 @@ def download_alerts_csv():
     b64 = base64.b64encode(csv.encode()).decode()
     href = f'<a href="data:file/csv;base64,{b64}" download="alerts_{datetime.now().strftime("%Y%m%d")}.csv">📥 알림 데이터 다운로드</a>'
     return href
+
+def update_sensor_data_container(use_real_api=False):
+    """센서 데이터 컨테이너 업데이트"""
+    if st.session_state.sensor_container is None:
+        st.session_state.sensor_container = st.empty()
+    
+    with st.session_state.sensor_container.container():
+        st.markdown('<div class="chart-title no-translate" translate="no" style="font-size:1rem; margin-bottom:0.2rem;">실시간 센서</div>', unsafe_allow_html=True)
+        
+        # FastAPI에서 센서 데이터 가져오기
+        sensor_data = get_sensor_data_from_api(use_real_api)
+        if sensor_data and use_real_api:
+            # 실제 API 데이터로 그래프 그리기
+            fig = go.Figure()
+            if 'temperature' in sensor_data and sensor_data['temperature']:
+                temp_times = [d['timestamp'] for d in sensor_data['temperature']]
+                temp_values = [d['value'] for d in sensor_data['temperature']]
+                fig.add_trace(go.Scatter(
+                    x=temp_times,
+                    y=temp_values,
+                    mode='lines',
+                    name='온도',
+                    line=dict(color='#ef4444', width=2)
+                ))
+            if 'pressure' in sensor_data and sensor_data['pressure']:
+                pres_times = [d['timestamp'] for d in sensor_data['pressure']]
+                pres_values = [d['value'] for d in sensor_data['pressure']]
+                fig.add_trace(go.Scatter(
+                    x=pres_times,
+                    y=pres_values,
+                    mode='lines',
+                    name='압력',
+                    line=dict(color='#3b82f6', width=2),
+                    yaxis='y2'
+                ))
+            fig.update_layout(
+                height=200,
+                margin=dict(l=8, r=8, t=8, b=8),
+                showlegend=True,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=9)),
+                yaxis=dict(title={'text':"온도", 'font':{'size':9}}, side="left"),
+                yaxis2=dict(title="압력", overlaying="y", side="right"),
+                xaxis=dict(title={'text':"시간", 'font':{'size':9}}),
+                plot_bgcolor='white',
+                paper_bgcolor='white',
+                font=dict(color='#1e293b', size=9)
+            )
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        else:
+            # 더미 데이터 사용
+            sensor_data = generate_sensor_data()
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=sensor_data['time'],
+                y=sensor_data['temperature'],
+                mode='lines',
+                name='온도',
+                line=dict(color='#ef4444', width=2)
+            ))
+            fig.add_trace(go.Scatter(
+                x=sensor_data['time'],
+                y=sensor_data['pressure'],
+                mode='lines',
+                name='압력',
+                line=dict(color='#3b82f6', width=2),
+                yaxis='y2'
+            ))
+            fig.update_layout(
+                height=200,
+                margin=dict(l=8, r=8, t=8, b=8),
+                showlegend=True,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=9)),
+                yaxis=dict(title={'text':"온도", 'font':{'size':9}}, side="left"),
+                yaxis2=dict(title="압력", overlaying="y", side="right"),
+                xaxis=dict(title={'text':"시간", 'font':{'size':9}}),
+                plot_bgcolor='white',
+                paper_bgcolor='white',
+                font=dict(color='#1e293b', size=9)
+            )
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+def update_alert_container(use_real_api=False):
+    """알림 컨테이너 업데이트"""
+    if st.session_state.alert_container is None:
+        st.session_state.alert_container = st.empty()
+    
+    with st.session_state.alert_container.container():
+        st.markdown('<div class="chart-title no-translate" translate="no" style="font-size:1rem; margin-bottom:0.2rem;">업무 알림</div>', unsafe_allow_html=True)
+        
+        alerts = get_alerts_from_api(use_real_api) if use_real_api else generate_alert_data()
+        filtered_alerts = [a for a in alerts if a['severity'] in ['error','warning','info']][:6]
+        table_data = []
+        for a in filtered_alerts:
+            emoji = {'error':'🔴','warning':'🟠','info':'🔵'}.get(a['severity'],'🔵')
+            table_data.append({
+                '설비': a['equipment'],
+                '이슈': f"{emoji} {a['issue']}",
+                '시간': a['time']
+            })
+        df = pd.DataFrame(table_data)
+        st.dataframe(df, height=200, use_container_width=True)
+
+def update_equipment_container(use_real_api=False):
+    """설비 상태 컨테이너 업데이트"""
+    if st.session_state.equipment_container is None:
+        st.session_state.equipment_container = st.empty()
+    
+    with st.session_state.equipment_container.container():
+        st.markdown('<div class="chart-title no-translate" translate="no" style="font-size:1rem; margin-bottom:0.2rem;">설비 상태</div>', unsafe_allow_html=True)
+        
+        equipment_status = get_equipment_status_from_api(use_real_api) if use_real_api else generate_equipment_status()[:6]
+        table_data = []
+        for eq in equipment_status:
+            status_emoji = {'정상':'🟢','주의':'🟠','오류':'🔴'}.get(eq['status'],'🟢')
+            table_data.append({
+                '설비': eq['name'],
+                '상태': f"{status_emoji} {eq['status']}",
+                '가동률': f"{eq['efficiency']}%"
+            })
+        df = pd.DataFrame(table_data)
+        st.dataframe(df, height=200, use_container_width=True)
+
+def start_data_update_thread(use_real_api=False):
+    """백그라운드에서 데이터를 주기적으로 업데이트하는 스레드"""
+    def update_loop():
+        while True:
+            try:
+                # 3초마다 데이터 업데이트
+                time.sleep(3)
+                
+                # 스레드 안전한 방식으로 업데이트 플래그 설정
+                if 'last_update' not in st.session_state:
+                    st.session_state.last_update = time.time()
+                else:
+                    st.session_state.last_update = time.time()
+                
+            except Exception as e:
+                print(f"데이터 업데이트 오류: {e}")
+                time.sleep(1)
+    
+    # 백그라운드 스레드 시작
+    update_thread = threading.Thread(target=update_loop, daemon=True)
+    update_thread.start()
+    return update_thread
 
 def show_equipment_detail(equipment_id):
     """설비 상세 정보 표시"""
@@ -984,6 +1134,25 @@ def show_equipment_detail(equipment_id):
 # 메인 대시보드
 
 def main():
+    # session_state 초기화
+    if 'sensor_container' not in st.session_state:
+        st.session_state.sensor_container = None
+    if 'alert_container' not in st.session_state:
+        st.session_state.alert_container = None
+    if 'equipment_container' not in st.session_state:
+        st.session_state.equipment_container = None
+    if 'update_thread_started' not in st.session_state:
+        st.session_state.update_thread_started = False
+    
+    # 자동 새로고침 설정 (2초마다)
+    if 'last_update' not in st.session_state:
+        st.session_state.last_update = time.time()
+    
+    # 2초마다 자동 새로고침
+    if time.time() - st.session_state.last_update > 2:
+        st.session_state.last_update = time.time()
+        st.rerun()
+
     st.markdown(
         '''
         <style>
@@ -1067,9 +1236,21 @@ def main():
         )
         st.markdown('<hr style="margin:1.5rem 0 1rem 0; border: none; border-top: 1.5px solid #e2e8f0;" />', unsafe_allow_html=True)
         # 연동 토글 항상 하단에
-        use_real_api = st.toggle("실제 API 연동", value=False, help="실제 API에서 데이터를 받아옵니다.")
-        use_ai_model = st.toggle("AI 모델 연동", value=False, help="AI 예측/진단 기능을 활성화합니다.")
-
+        use_real_api = st.toggle("실제 API 연동", value=False, help="실제 API에서 데이터를 받아옵니다.", key="api_toggle")
+        use_ai_model = st.toggle("AI 모델 연동", value=False, help="AI 예측/진단 기능을 활성화합니다.", key="ai_toggle")
+        
+        # 데이터 초기화 버튼
+        if st.button("🗑️ 데이터 초기화", help="기존 센서 데이터와 알림을 모두 삭제합니다."):
+            try:
+                response = requests.post("http://localhost:8000/clear_data", timeout=5)
+                if response.status_code == 200:
+                    st.success("데이터베이스가 초기화되었습니다!")
+                    st.rerun()
+                else:
+                    st.error("데이터 초기화 실패")
+            except Exception as e:
+                st.error(f"API 서버 연결 실패: {e}")
+    
     with tabs[0]:  # 대시보드
         st.markdown('<div class="main-header no-translate" translate="no" style="margin-bottom:0.5rem; font-size:1.5rem;">🏭 POSCO MOBILITY IoT 대시보드</div>', unsafe_allow_html=True)
         # KPI+AI 카드 2행 3열 (총 6개)
@@ -1132,92 +1313,14 @@ def main():
         # 상단 1행
         # 1. 설비 상태
         with row_top[0]:
-            st.markdown('<div class="chart-title no-translate" translate="no" style="font-size:1rem; margin-bottom:0.2rem;">설비 상태</div>', unsafe_allow_html=True)
-            equipment_status = get_equipment_status_from_api(use_real_api) if use_real_api else generate_equipment_status()[:6]
-            table_data = []
-            for eq in equipment_status:
-                status_emoji = {'정상':'🟢','주의':'🟠','오류':'🔴'}.get(eq['status'],'🟢')
-                table_data.append({
-                    '설비': eq['name'],
-                    '상태': f"{status_emoji} {eq['status']}",
-                    '가동률': f"{eq['efficiency']}%"
-                })
-            df = pd.DataFrame(table_data)
-            st.dataframe(df, height=200, use_container_width=True)
+            if st.session_state.equipment_container is None:
+                st.session_state.equipment_container = st.empty()
+            update_equipment_container(use_real_api)
         # 2. 실시간 센서
         with row_top[1]:
-            st.markdown('<div class="chart-title no-translate" translate="no" style="font-size:1rem; margin-bottom:0.2rem;">실시간 센서</div>', unsafe_allow_html=True)
-            # FastAPI에서 센서 데이터 가져오기
-            sensor_data = get_sensor_data_from_api(use_real_api)
-            if sensor_data and use_real_api:
-                # 실제 API 데이터로 그래프 그리기
-                fig = go.Figure()
-                if 'temperature' in sensor_data and sensor_data['temperature']:
-                    temp_times = [d['timestamp'] for d in sensor_data['temperature']]
-                    temp_values = [d['value'] for d in sensor_data['temperature']]
-                    fig.add_trace(go.Scatter(
-                        x=temp_times,
-                        y=temp_values,
-                        mode='lines',
-                        name='온도',
-                        line=dict(color='#ef4444', width=2)
-                    ))
-                if 'pressure' in sensor_data and sensor_data['pressure']:
-                    pres_times = [d['timestamp'] for d in sensor_data['pressure']]
-                    pres_values = [d['value'] for d in sensor_data['pressure']]
-                    fig.add_trace(go.Scatter(
-                        x=pres_times,
-                        y=pres_values,
-                        mode='lines',
-                        name='압력',
-                        line=dict(color='#3b82f6', width=2),
-                        yaxis='y2'
-                    ))
-                fig.update_layout(
-                    height=200,
-                    margin=dict(l=8, r=8, t=8, b=8),
-                    showlegend=True,
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=9)),
-                    yaxis=dict(title={'text':"온도", 'font':{'size':9}}, side="left"),
-                    yaxis2=dict(title="압력", overlaying="y", side="right"),
-                    xaxis=dict(title={'text':"시간", 'font':{'size':9}}),
-                    plot_bgcolor='white',
-                    paper_bgcolor='white',
-                    font=dict(color='#1e293b', size=9)
-                )
-                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-            else:
-                # 더미 데이터 사용
-                sensor_data = generate_sensor_data()
-                fig = go.Figure()
-                fig.add_trace(go.Scatter(
-                    x=sensor_data['time'],
-                    y=sensor_data['temperature'],
-                    mode='lines',
-                    name='온도',
-                    line=dict(color='#ef4444', width=2)
-                ))
-                fig.add_trace(go.Scatter(
-                    x=sensor_data['time'],
-                    y=sensor_data['pressure'],
-                    mode='lines',
-                    name='압력',
-                    line=dict(color='#3b82f6', width=2),
-                    yaxis='y2'
-                ))
-                fig.update_layout(
-                    height=200,
-                    margin=dict(l=8, r=8, t=8, b=8),
-                    showlegend=True,
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=9)),
-                    yaxis=dict(title={'text':"온도", 'font':{'size':9}}, side="left"),
-                    yaxis2=dict(title="압력", overlaying="y", side="right"),
-                    xaxis=dict(title={'text':"시간", 'font':{'size':9}}),
-                    plot_bgcolor='white',
-                    paper_bgcolor='white',
-                    font=dict(color='#1e293b', size=9)
-                )
-                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            if st.session_state.sensor_container is None:
+                st.session_state.sensor_container = st.empty()
+            update_sensor_data_container(use_real_api)
         # 3. 품질/생산 트렌드
         with row_top[2]:
             st.markdown('<div class="chart-title no-translate" translate="no" style="font-size:1rem; margin-bottom:0.2rem;">품질/생산 트렌드</div>', unsafe_allow_html=True)
@@ -1246,18 +1349,9 @@ def main():
         # 하단 2행
         # 4. 업무 알림
         with row_bottom[0]:
-            st.markdown('<div class="chart-title no-translate" translate="no" style="font-size:1rem; margin-bottom:0.2rem;">업무 알림</div>', unsafe_allow_html=True)
-            filtered_alerts = [a for a in alerts if a['severity'] in ['error','warning','info']][:6]
-            table_data = []
-            for a in filtered_alerts:
-                emoji = {'error':'🔴','warning':'🟠','info':'🔵'}.get(a['severity'],'🔵')
-                table_data.append({
-                    '설비': a['equipment'],
-                    '이슈': f"{emoji} {a['issue']}",
-                    '시간': a['time']
-                })
-            df = pd.DataFrame(table_data)
-            st.dataframe(df, height=200, use_container_width=True)
+            if st.session_state.alert_container is None:
+                st.session_state.alert_container = st.empty()
+            update_alert_container(use_real_api)
         # 5. AI 에너지 예측 (카드 없이 제목+그래프만, 그래프 height 확대)
         with row_bottom[1]:
             st.markdown('<div class="chart-title no-translate" translate="no" style="font-size:1rem; margin-bottom:0.4rem;">AI 에너지 소비 예측</div>', unsafe_allow_html=True)
