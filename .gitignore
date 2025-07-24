@@ -2,4 +2,9 @@ data
 check
 new_dashboard.py
 .env
-
+# .gitignore에 추가
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
