@@ -1,8 +1,6 @@
 import os
 import sqlite3
 from fastapi import FastAPI, HTTPException, Request, Query
-from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
@@ -21,9 +19,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# 템플릿 설정 (대시보드용)
-templates = Jinja2Templates(directory="templates")
 
 # 데이터 모델 정의
 class SensorData(BaseModel):
@@ -74,11 +69,6 @@ def init_db():
 @app.on_event("startup")
 def startup():
     init_db()
-
-# 대시보드 메인 페이지 (HTML)
-@app.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request):
-    return templates.TemplateResponse("dashboard.html", {"request": request})
 
 # 센서 데이터 조회 (시뮬레이터/대시보드)
 @app.get("/sensors", response_model=List[SensorData])

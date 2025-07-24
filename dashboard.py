@@ -10,7 +10,7 @@ import json
 import io
 import base64
 import threading
-
+# FastAPI 서버
 # FastAPI 서버 URL
 API_BASE_URL = "http://localhost:8000"
 
