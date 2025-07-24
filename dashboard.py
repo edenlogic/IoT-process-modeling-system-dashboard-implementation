@@ -880,12 +880,11 @@ def generate_alert_data():
     return alerts
 
 def generate_quality_trend():
-    """품질 추세 데이터 생성"""
+    """품질 추세 데이터 생성 (불량률 1% 미만, 품질률 99.9% 이상 예시)"""
     days = ['월', '화', '수', '목', '금', '토', '일']
-    quality_rates = [98.1, 97.8, 95.5, 99.1, 98.2, 92.3, 94.7]
+    quality_rates = [99.98, 99.97, 99.99, 99.96, 99.98, 99.95, 99.97]
     production_volume = [1200, 1350, 1180, 1420, 1247, 980, 650]
-    defect_rates = [2.1, 1.8, 2.5, 1.9, 2.8, 3.1, 2.2]
-    
+    defect_rates = [0.02, 0.03, 0.01, 0.04, 0.02, 0.05, 0.03]  # 1% 미만
     return pd.DataFrame({
         'day': days,
         'quality_rate': quality_rates,
@@ -894,7 +893,7 @@ def generate_quality_trend():
     })
 
 def generate_production_kpi():
-    """생산성 KPI 데이터 생성"""
+    """생산성 KPI 데이터 생성 (불량률 1% 미만, 품질률 99.9% 이상 예시)"""
     return {
         'daily_target': 1300,
         'daily_actual': 1247,
@@ -905,7 +904,7 @@ def generate_production_kpi():
         'oee': 87.3,  # Overall Equipment Effectiveness
         'availability': 94.2,
         'performance': 92.8,
-        'quality': 97.6
+        'quality': 99.98  # 품질률 99.98% (불량률 0.02%)
     }
 
 def download_alerts_csv():
@@ -1260,8 +1259,11 @@ def main():
         quality_data = generate_quality_trend()
         alerts = get_alerts_from_api(use_real_api) if use_real_api else generate_alert_data()
         active_alerts = len([a for a in alerts if a.get('status', '미처리') != '완료'])
-        current_defect_rate = quality_data['defect_rate'].iloc[-1]
-        # 1행: 가동률, 불량률, 생산량
+        # PPM 계산
+        last_defect_rate = quality_data['defect_rate'].iloc[-1]
+        last_production_volume = quality_data['production_volume'].iloc[-1]
+        ppm = round((last_defect_rate / 100) * last_production_volume / last_production_volume * 1_000_000, 2)
+        # 1행: 가동률, PPM, 생산량
         with row1[0]:
             st.markdown(f"""
             <div class="kpi-card success no-translate" translate="no" style="padding:0.5rem 0.4rem; min-height:70px; height:80px;">
@@ -1272,8 +1274,8 @@ def main():
         with row1[1]:
             st.markdown(f"""
             <div class="kpi-card warning no-translate" translate="no" style="padding:0.5rem 0.4rem; min-height:70px; height:80px;">
-                <div class="kpi-label" style="font-size:0.9rem;">불량률</div>
-                <div class="kpi-value" style="font-size:1.3rem;">{current_defect_rate}%</div>
+                <div class="kpi-label" style="font-size:0.9rem;">PPM (불량 개수/백만 개 기준)</div>
+                <div class="kpi-value" style="font-size:1.3rem;">{ppm}</div>
             </div>
             """, unsafe_allow_html=True)
         with row1[2]:
@@ -1444,32 +1446,75 @@ def main():
 
     with tabs[3]:  # 리포트
         st.markdown('<div class="main-header no-translate" translate="no">📈 리포트</div>', unsafe_allow_html=True)
-        st.write("기간별 주요 KPI, 생산량, 불량률, 알림 통계 등 리포트 요약을 제공합니다.")
-        # 샘플 기간 선택
+        st.write("기간별 주요 KPI, 생산량, 불량률, PPM, 알림 통계 등 리포트 상세를 제공합니다.")
+        # 기간 선택
         col1, col2 = st.columns(2)
         with col1:
             report_range = st.selectbox("리포트 기간", ["최근 7일", "최근 30일", "올해", "전체"])
         with col2:
-            st.button("구현 준비 중", disabled=True, key="report_ready_btn")
-        # 샘플 KPI/생산량/불량률/알림 통계 차트
+            st.button("PDF/엑셀 다운로드(확장)", disabled=True, key="report_ready_btn")
+        # KPI 요약
         st.subheader("주요 KPI 요약")
         kpi_data = generate_production_kpi()
         kpi_col1, kpi_col2, kpi_col3, kpi_col4 = st.columns(4, gap="small")
         with kpi_col1:
-            st.metric("OEE(설비종합효율)", f"{kpi_data['oee']}%")
+            st.metric("OEE(설비종합효율)", f"{kpi_data['oee']:.2f}%")
         with kpi_col2:
-            st.metric("가동률", f"{kpi_data['availability']}%")
+            st.metric("가동률", f"{kpi_data['availability']:.2f}%")
         with kpi_col3:
-            st.metric("품질률", f"{kpi_data['quality']}%")
+            st.metric("품질률", f"{kpi_data['quality']:.2f}%")
         with kpi_col4:
-            st.metric("불량률", f"{100-kpi_data['quality']:.1f}%")
-        st.subheader("생산량/불량률 추이")
+            st.metric("불량률", f"{100-kpi_data['quality']:.2f}%")
+        # 상세 테이블
+        st.subheader("일별 생산/품질 상세")
         quality_data = generate_quality_trend()
-        st.line_chart(quality_data.set_index('day')[['production_volume', 'defect_rate']])
-        st.subheader("알림 통계 (샘플)")
+        # PPM 계산
+        quality_data = quality_data.copy()
+        quality_data['PPM'] = (quality_data['defect_rate'] / 100 * 1_000_000).round(2)
+        detail_df = quality_data[['day', 'production_volume', 'defect_rate', 'PPM', 'quality_rate']].rename(columns={
+            'day': '요일', 'production_volume': '생산량', 'defect_rate': '불량률(%)', 'PPM': 'PPM', 'quality_rate': '품질률(%)'
+        })
+        st.dataframe(detail_df, use_container_width=True, height=250, hide_index=True)
+        # 요일 선택
+        selected_row = st.selectbox("상세를 볼 요일을 선택하세요", detail_df['요일'])
+        sel = detail_df[detail_df['요일'] == selected_row].index[0]
+        # 상세 패널
+        st.markdown(f"#### {detail_df.loc[sel, '요일']} 상세")
+        st.write(f"- 생산량: {detail_df.loc[sel, '생산량']}")
+        st.write(f"- 불량률: {detail_df.loc[sel, '불량률(%)']}%  (PPM: {detail_df.loc[sel, 'PPM']})")
+        st.write(f"- 품질률: {detail_df.loc[sel, '품질률(%)']}%")
+        # 해당 요일 알림/불량 상세(샘플)
         alert_df = pd.DataFrame(generate_alert_data())
-        st.bar_chart(alert_df['severity'].value_counts())
-        st.info("리포트 다운로드(PDF/엑셀), 상세 분석 등은 추후 확장 예정입니다.")
+        st.write("**해당일 알림/이상 이력(샘플)**")
+        st.dataframe(alert_df[alert_df['time'].str.startswith('0'+str(sel+1))][['equipment','issue','severity','status','details']], use_container_width=True, height=120)
+        # PPM/불량률 이중축 그래프
+        st.subheader("PPM/불량률 추이")
+        fig = go.Figure()
+        fig.add_trace(go.Bar(x=quality_data['day'], y=quality_data['PPM'], name='PPM', marker_color='#3b82f6'))
+        fig.add_trace(go.Scatter(x=quality_data['day'], y=quality_data['defect_rate'], name='불량률(%)', yaxis='y2', mode='lines+markers', line=dict(color='#ef4444', width=2)))
+        fig.update_layout(
+            yaxis=dict(title='PPM', side='left'),
+            yaxis2=dict(title='불량률(%)', overlaying='y', side='right'),
+            xaxis=dict(title='요일'),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            height=300,
+            plot_bgcolor='white',
+            paper_bgcolor='white',
+            margin=dict(l=8, r=8, t=8, b=8),
+            font=dict(color='#1e293b', size=11)
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        # 알림 통계(유형별/설비별)
+        st.subheader("알림 통계")
+        alert_df = pd.DataFrame(generate_alert_data())
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write("**알림 심각도별 통계**")
+            st.bar_chart(alert_df['severity'].value_counts())
+        with col2:
+            st.write("**설비별 알림 건수**")
+            st.bar_chart(alert_df['equipment'].value_counts())
+        st.info("상세 테이블 행을 클릭하면 해당일의 상세 알림/불량 이력을 볼 수 있습니다. PDF/엑셀 다운로드, 기간별 상세 리포트 등은 추후 확장 예정입니다.")
 
     with tabs[4]:  # 설정
         st.markdown('<div class="main-header no-translate" translate="no">⚙️ 설정</div>', unsafe_allow_html=True)
