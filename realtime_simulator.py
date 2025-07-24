@@ -38,20 +38,17 @@ class BaseCSVSimulator(ABC):
         self.logger = logging.getLogger(f'{self.__class__.__name__}')
         
     def load_data(self):
-        """CSV 데이터 로드 (더미 분기 제거)"""
+        """CSV 데이터 로드 (CSV 파일 필수)"""
         if not os.path.exists(self.csv_path):
-            self.logger.error(f"CSV 파일 없음: {self.csv_path}, 시뮬레이터를 실행할 수 없습니다.")
-            self.df = None
-            self.patterns = {}
-            return
+            raise FileNotFoundError(f"필수 CSV 파일이 없습니다: {self.csv_path}")
+        
         try:
             self.df = pd.read_csv(self.csv_path)
             self.logger.info(f"CSV 데이터 로드 완료: {len(self.df)} 행")
             self.learn_patterns()
         except Exception as e:
             self.logger.error(f"CSV 로드 실패: {e}")
-            self.df = None
-            self.patterns = {}
+            raise
     
     @abstractmethod
     def learn_patterns(self):
@@ -74,9 +71,9 @@ class BaseCSVSimulator(ABC):
                     return float(obj)
                 elif isinstance(obj, np.ndarray):
                     return obj.tolist()
-                elif isinstance(obj, np.bool_):  # numpy bool 타입 처리
+                elif isinstance(obj, np.bool_):
                     return bool(obj)
-                elif isinstance(obj, bool):  # Python native bool은 그대로
+                elif isinstance(obj, bool):
                     return obj
                 elif isinstance(obj, dict):
                     return {key: convert_to_native(value) for key, value in obj.items()}
@@ -140,47 +137,45 @@ class BaseCSVSimulator(ABC):
             self.logger.error(f"[KPI] 데이터 API 오류: {e}")
     
     def run(self, interval: float = 1.0, test_mode: bool = True, test_scenario: int = 1):
-        """시뮬레이터 실행 (알림/설비상태/트렌드/KPI 자동 전송 추가, 센서 여러 개 처리)"""
+        """시뮬레이터 실행"""
         self.running = True
         self.logger.info(f"{self.topic_name} 시뮬레이터 시작")
-        self.start_time = time.time()  # generate_data에서 사용하기 위해 저장
+        self.start_time = time.time()
         self.test_mode = test_mode
         self.test_scenario = test_scenario
         max_duration = 120 if test_mode else float('inf')  # 테스트모드: 2분
         normal_count = 0
         fault_count = 0
+        
         while self.running and (time.time() - self.start_time) < max_duration:
             try:
                 elapsed = time.time() - self.start_time
                 if test_mode and int(elapsed) % 10 == 0 and int(elapsed) > 0:
                     self.logger.info(f"[테스트 {elapsed:.0f}초] 정상: {normal_count}, 이상: {fault_count}")
+                
                 datas = self.generate_data()
                 if datas is None:
                     continue
+                    
                 # 센서 데이터가 dict 하나면 리스트로 변환
                 if isinstance(datas, dict):
                     datas = [datas]
+                
+                # 이상 감지를 위한 플래그
+                has_fault = False
+                
                 for data in datas:
-                    # 카운트 업데이트
-                    if self.topic_name == 'manufacturing':
-                        if (data.get('predictions', {}).get('energy_anomaly') or 
-                            data.get('predictions', {}).get('vibration_spike')):
-                            fault_count += 1
-                        else:
-                            normal_count += 1
-                    else:
-                        if data.get('fault_status', {}).get('is_normal', 1) == 0:
-                            fault_count += 1
-                        else:
-                            normal_count += 1
                     # 센서 데이터 전송
                     self.send_to_api(data)
+                    
                     # 센서 임계값 초과 시 알림/설비상태 전송
                     equipment = data.get('equipment', 'press_001')
                     sensor_type = data.get('sensor_type', None)
                     value = data.get('value', None)
                     thresholds = {"temperature": 65.0, "pressure": 1.1, "vibration": 3.0}
+                    
                     if sensor_type in thresholds and value is not None and value > thresholds[sensor_type]:
+                        has_fault = True
                         severity = "warning" if value < thresholds[sensor_type] * 1.1 else "error"
                         alert = {
                             "equipment": equipment,
@@ -195,12 +190,20 @@ class BaseCSVSimulator(ABC):
                         status = "주의" if severity == "warning" else "오류"
                         efficiency = 80.0 if severity == "warning" else 60.0
                         self.update_equipment_status(equipment, status, efficiency)
-                # 트렌드/KPI는 대시보드에서 GET으로 가져오므로 제거
+                
+                # 카운트 업데이트
+                if has_fault:
+                    fault_count += 1
+                else:
+                    normal_count += 1
+                
                 time.sleep(interval)
+                
             except KeyboardInterrupt:
                 self.stop()
             except Exception as e:
                 self.logger.error(f"시뮬레이션 오류: {e}")
+                
         if test_mode:
             self.logger.info(f"테스트 완료! 총 {elapsed:.0f}초 실행")
             self.logger.info(f"최종 결과 - 정상: {normal_count}, 이상: {fault_count}")
@@ -218,16 +221,16 @@ class HydraulicSimulator(BaseCSVSimulator):
         super().__init__(csv_path, "hydraulic")
         self.sensor_types = ['PS', 'TS', 'FS', 'VS', 'EPS', 'CE', 'CP', 'SE']
         self.fault_components = ['Cooler', 'Valve', 'Pump', 'Accumulator']
+        # 고장 상태 저장
+        self.current_fault_state = {
+            'is_fault': False,
+            'fault_component': None,
+            'fault_value': None
+        }
         
     def learn_patterns(self):
         """유압 데이터 패턴 학습 - 부품 값 기반 정상/고장 판단"""
         
-        if self.df is None:
-            self.logger.warning("CSV 없이 더미 패턴으로 동작합니다.")
-            # 더미 패턴/랜덤값 등으로 self.patterns 초기화
-            self.patterns = {f"dummy_sensor_{i}": {"normal_mean": 1.0, "normal_std": 0.1, "normal_min": 0.5, "normal_max": 1.5, "abnormal_samples": [2.0]} for i in range(3)}
-            return
-
         # 각 부품의 정상값 정의 (높은 값이 정상)
         COMPONENT_NORMAL_VALUES = {
             'Cooler': 3.0,      # 3 = 정상, 20/100 = 고장
@@ -247,7 +250,6 @@ class HydraulicSimulator(BaseCSVSimulator):
         }
         
         # 실제 정상/비정상 데이터 분리 (부품 값 기반)
-        # 모든 부품이 정상인 경우를 정상 데이터로 간주
         normal_mask = pd.Series(True, index=self.df.index)
         
         for component, threshold in NORMAL_THRESHOLDS.items():
@@ -270,9 +272,9 @@ class HydraulicSimulator(BaseCSVSimulator):
         self.logger.info(f"찾은 센서 컬럼 수: {len(sensor_cols)}")
         
         # 센서 패턴 학습
+        self.patterns = {}
         for col in sensor_cols:
             if len(normal_data) > 0:
-                # 정상 데이터가 있으면 사용
                 normal_values = normal_data[col]
                 abnormal_values = abnormal_data[col] if len(abnormal_data) > 0 else pd.Series()
             else:
@@ -310,7 +312,7 @@ class HydraulicSimulator(BaseCSVSimulator):
                         'probability': len(fault_data) / len(self.df),
                         'normal_value': normal_value,
                         'threshold': threshold,
-                        'fault_values': sorted(fault_values),  # 정렬하여 저장
+                        'fault_values': sorted(fault_values),
                         'value_range': (fault_data[component].min(), fault_data[component].max()),
                         'severity_levels': {
                             'mild': [v for v in fault_values if v >= threshold * 0.7],
@@ -332,23 +334,6 @@ class HydraulicSimulator(BaseCSVSimulator):
         """유압 시스템 데이터 생성"""
         timestamp = datetime.now()
         
-        if self.df is None or not self.patterns:
-            # 더미/랜덤 데이터 생성: 센서별로 하나씩 반환
-            dummy_equipment = "press_001"
-            dummy_types = ["temperature", "pressure", "vibration"]
-            dummy_values = [round(random.uniform(20, 80), 2), round(random.uniform(0.8, 1.2), 3), round(random.uniform(0.1, 5.0), 2)]
-            # 센서별로 하나씩 dict 생성
-            datas = []
-            for sensor_type, value in zip(dummy_types, dummy_values):
-                data = {
-                    "equipment": dummy_equipment,
-                    "sensor_type": sensor_type,
-                    "value": value,
-                    "timestamp": timestamp.isoformat()
-                }
-                datas.append(data)
-            return datas
-
         # 테스트 모드 시나리오 1: 시간대별 명확한 구분
         if hasattr(self, 'test_mode') and self.test_mode and self.test_scenario == 1:
             elapsed = time.time() - self.start_time
@@ -365,7 +350,6 @@ class HydraulicSimulator(BaseCSVSimulator):
                 is_fault = True
                 fault_component = 'Cooler'
                 if fault_component in self.fault_patterns:
-                    # Cooler의 정상값과 고장값 범위 사용
                     normal_val = self.component_normal_values.get(fault_component, 3)
                     fault_value = normal_val * 0.7  # 정상값의 70% (경미한 이상)
                 else:
@@ -451,43 +435,55 @@ class HydraulicSimulator(BaseCSVSimulator):
                 else:
                     fault_value = random.uniform(pattern['value_range'][0], pattern['value_range'][1])
         
-        # 센서 데이터 생성
-        sensor_data = {}
-        
-        for sensor_name, pattern in self.patterns.items():
-            if is_fault and len(pattern.get('abnormal_samples', [])) > 0:
-                # 고장 시: 이상 패턴에서 샘플링
-                if random.random() < 0.3:  # 30% 확률로 이상값
-                    value = random.choice(pattern['abnormal_samples'])
-                else:
-                    # 정상 범위에서 벗어난 값
-                    value = pattern['normal_mean'] + random.gauss(0, pattern['normal_std'] * 2)
-            else:
-                # 정상 시: 정상 분포에서 샘플링
-                value = random.gauss(pattern['normal_mean'], pattern['normal_std'])
-                value = np.clip(value, pattern['normal_min'], pattern['normal_max'])
-            
-            sensor_data[sensor_name] = float(value)
-        
-        # 전체 데이터 구성
-        data = {
-            'timestamp': timestamp.isoformat(),
-            'sensors': sensor_data,
-            'fault_status': {
-                'is_normal': 0 if is_fault else 1,
-                'fault_component': fault_component,
-                'fault_value': fault_value,
-                'component_normal_value': self.component_normal_values.get(fault_component) if fault_component else None
-            },
-            'topic': 'hydraulic'
+        # 현재 고장 상태 저장
+        self.current_fault_state = {
+            'is_fault': is_fault,
+            'fault_component': fault_component,
+            'fault_value': fault_value
         }
+        
+        # 센서별로 개별 데이터 생성
+        datas = []
+        
+        # 간단하게 temperature, pressure, vibration 3개 센서로 변환
+        sensor_mappings = {
+            'temperature': {'base': 65.0, 'fault_multiplier': 1.3, 'std': 5.0},
+            'pressure': {'base': 1.0, 'fault_multiplier': 1.4, 'std': 0.1},
+            'vibration': {'base': 2.5, 'fault_multiplier': 1.8, 'std': 0.5}
+        }
+        
+        for sensor_type, config in sensor_mappings.items():
+            # 기본값 생성
+            base_value = config['base'] + random.gauss(0, config['std'])
+            
+            # 고장 상태면 값 증가
+            if is_fault:
+                value = base_value * config['fault_multiplier']
+            else:
+                value = base_value
+                
+            # 범위 제한
+            if sensor_type == 'temperature':
+                value = np.clip(value, 20, 100)
+            elif sensor_type == 'pressure':
+                value = np.clip(value, 0.5, 2.0)
+            elif sensor_type == 'vibration':
+                value = np.clip(value, 0.1, 10.0)
+                
+            data = {
+                "equipment": "press_001",
+                "sensor_type": sensor_type,
+                "value": round(float(value), 2),
+                "timestamp": timestamp.isoformat()
+            }
+            datas.append(data)
         
         # 고장 발생 시 로그
         if is_fault and fault_component:
             normal_val = self.component_normal_values.get(fault_component, "알 수 없음")
             self.logger.warning(f"⚠️ 유압 시스템 이상 감지: {fault_component} (정상: {normal_val}, 현재: {fault_value:.1f})")
         
-        return [data]
+        return datas
 
 
 class ManufacturingSimulator(BaseCSVSimulator):
@@ -495,30 +491,23 @@ class ManufacturingSimulator(BaseCSVSimulator):
     
     def __init__(self, csv_path: str):
         super().__init__(csv_path, "manufacturing")
-        self.time_window = deque(maxlen=60)  # 60분 슬라이딩 윈도우 (딥러닝 입력용)
+        self.time_window = deque(maxlen=60)  # 60분 슬라이딩 윈도우
         self.energy_history = deque(maxlen=90)  # 과거 90분 에너지 데이터
-        # correlations를 항상 기본값으로 초기화
+        # correlations 초기화
         self.correlations = {
             'temp_speed': 0.0,
             'speed_vibration': 0.0,
             'temp_energy': 0.0,
             'vibration_energy': 0.0
         }
+        # 이상 상태 저장
+        self.current_anomaly_state = {
+            'energy_anomaly': False,
+            'vibration_spike': False
+        }
         
     def learn_patterns(self):
         """제조 데이터 패턴 학습 - 1분 단위 실시간 데이터"""
-        if self.df is None:
-            self.logger.warning("CSV 없이 더미 패턴으로 동작합니다.")
-            self.patterns = {f"dummy_sensor_{i}": {"normal_mean": 1.0, "normal_std": 0.1, "normal_min": 0.5, "normal_max": 1.5, "abnormal_samples": [2.0]} for i in range(3)}
-            # correlations도 더미로 초기화
-            self.correlations = {
-                'temp_speed': 0.0,
-                'speed_vibration': 0.0,
-                'temp_energy': 0.0,
-                'vibration_energy': 0.0
-            }
-            return
-
         # 시간 정보 추출
         self.df['Timestamp'] = pd.to_datetime(self.df['Timestamp'])
         self.df['minute'] = self.df['Timestamp'].dt.minute
@@ -586,24 +575,6 @@ class ManufacturingSimulator(BaseCSVSimulator):
     
     def generate_correlated_values(self, base_temp: float) -> Dict[str, float]:
         """상관관계를 고려한 센서값 생성"""
-        if self.df is None:
-            # 더미/랜덤 데이터 생성
-            values = {'Temperature (°C)': base_temp}
-            values['Machine Speed (RPM)'] = int(np.clip(
-                random.gauss(3000 + (base_temp - 75) * 20 * self.correlations['temp_speed'], 50),
-                1450, 1550  # 실제 데이터 범위
-            ))
-            values['Vibration Level (mm/s)'] = np.clip(
-                random.gauss(0.05 + (values['Machine Speed (RPM)'] - 1500) * 0.0001 * abs(self.correlations['speed_vibration']), 0.01),
-                0.03, 0.1
-            )
-            values['Production Quality Score'] = random.uniform(8.5, 9.0)
-            values['Energy Consumption (kWh)'] = np.clip(
-                1.5 + (base_temp - 75) * 0.01 * abs(self.correlations['temp_energy']) + (values['Machine Speed (RPM)'] - 1500) * 0.001 + values['Vibration Level (mm/s)'] * 10 * abs(self.correlations['vibration_energy']),
-                0.5, 3.0
-            )
-            return values
-
         # 온도 기반으로 다른 센서값 생성
         values = {'Temperature (°C)': base_temp}
         
@@ -644,7 +615,7 @@ class ManufacturingSimulator(BaseCSVSimulator):
     
     def predict_energy_30min(self) -> List[float]:
         """과거 60분 데이터로 미래 30분 에너지 예측 (간단한 시뮬레이션)"""
-        if self.df is None or len(self.energy_history) < 60:
+        if len(self.energy_history) < 60:
             # 데이터 부족 시 현재 값 반복
             return [self.energy_history[-1] if self.energy_history else 1.5] * 30
         
@@ -675,22 +646,12 @@ class ManufacturingSimulator(BaseCSVSimulator):
         timestamp = datetime.now()
         current_minute = timestamp.minute
         minute_group = current_minute // 10  # 0~5
-        if self.df is None or not hasattr(self, 'minute_patterns') or minute_group not in getattr(self, 'minute_patterns', {}):
-            # 더미/랜덤 데이터 생성: 센서별로 하나씩 반환
-            dummy_equipment = "press_001"
-            dummy_types = ["temperature", "pressure", "vibration"]
-            dummy_values = [round(random.uniform(20, 80), 2), round(random.uniform(0.8, 1.2), 3), round(random.uniform(0.1, 5.0), 2)]
-            datas = []
-            for sensor_type, value in zip(dummy_types, dummy_values):
-                data = {
-                    "equipment": dummy_equipment,
-                    "sensor_type": sensor_type,
-                    "value": value,
-                    "timestamp": timestamp.isoformat()
-                }
-                datas.append(data)
-            return datas
+        
         # 현재 시간대 패턴 가져오기
+        if minute_group not in self.minute_patterns:
+            self.logger.warning(f"시간대 {minute_group}에 대한 패턴이 없습니다.")
+            minute_group = 0  # 기본값 사용
+            
         pattern = self.minute_patterns[minute_group]
         
         # 기본 온도 생성
@@ -711,17 +672,6 @@ class ManufacturingSimulator(BaseCSVSimulator):
         # 에너지 히스토리 업데이트
         self.energy_history.append(current_data['Energy Consumption (kWh)'])
         
-        # 30분 후 에너지 예측
-        energy_predictions = self.predict_energy_30min()
-        
-        # 시계열 윈도우 업데이트 (딥러닝 입력용)
-        self.time_window.append({
-            'temperature': current_data['Temperature (°C)'],
-            'speed': current_data['Machine Speed (RPM)'],
-            'vibration': current_data['Vibration Level (mm/s)'],
-            'energy': current_data['Energy Consumption (kWh)']
-        })
-        
         # 이상 감지 (이동평균 기반)
         energy_anomaly = False
         if len(self.energy_history) >= 10:
@@ -732,20 +682,32 @@ class ManufacturingSimulator(BaseCSVSimulator):
         # 진동 스파이크 감지
         vibration_spike = current_data['Vibration Level (mm/s)'] > 0.08
         
-        # 전체 데이터 구성
-        data = {
-            'timestamp': timestamp.isoformat(),
-            'sensors': current_data,
-            'predictions': {
-                'energy_next_30min': energy_predictions,
-                'energy_next_hour_avg': np.mean(energy_predictions),
-                'optimal_conditions': 1 if is_optimal else 0,
-                'energy_anomaly': energy_anomaly,
-                'vibration_spike': vibration_spike
-            },
-            'time_window': list(self.time_window) if len(self.time_window) == 60 else None,  # 딥러닝 입력용
-            'topic': 'manufacturing'
+        # 현재 이상 상태 저장
+        self.current_anomaly_state = {
+            'energy_anomaly': energy_anomaly,
+            'vibration_spike': vibration_spike
         }
+        
+        # 센서별로 개별 데이터 생성
+        datas = []
+        
+        # 센서 매핑 (Manufacturing CSV의 컬럼을 일반 센서 타입으로 변환)
+        sensor_mappings = {
+            'temperature': current_data.get('Temperature (°C)', 75.0),
+            'pressure': current_data.get('Machine Speed (RPM)', 1500) / 1500,  # 정규화
+            'vibration': current_data.get('Vibration Level (mm/s)', 0.05) * 50  # 스케일 조정
+        }
+        
+        equipment = "press_001"  # 또는 다른 장비 ID 사용 가능
+        
+        for sensor_type, value in sensor_mappings.items():
+            data = {
+                "equipment": equipment,
+                "sensor_type": sensor_type,
+                "value": round(float(value), 2),
+                "timestamp": timestamp.isoformat()
+            }
+            datas.append(data)
         
         # 이상 상황 로그
         if energy_anomaly:
@@ -753,7 +715,7 @@ class ManufacturingSimulator(BaseCSVSimulator):
         if vibration_spike:
             self.logger.warning(f"📊 진동 스파이크 감지: {current_data['Vibration Level (mm/s)']:.3f} mm/s")
         
-        return [data]
+        return datas
 
 
 class DualCSVSimulator:
@@ -833,6 +795,14 @@ if __name__ == "__main__":
     HYDRAULIC_CSV = "C:/posco/data/hydraulic_processed_data.csv"
     MANUFACTURING_CSV = "C:/posco/data/Manufacturing_dataset.csv"
     
+    # CSV 파일 존재 확인
+    if not os.path.exists(HYDRAULIC_CSV):
+        print(f"❌ 유압 CSV 파일이 없습니다: {HYDRAULIC_CSV}")
+        exit(1)
+    if not os.path.exists(MANUFACTURING_CSV):
+        print(f"❌ 제조 CSV 파일이 없습니다: {MANUFACTURING_CSV}")
+        exit(1)
+    
     # 듀얼 시뮬레이터 생성
     simulator = DualCSVSimulator(HYDRAULIC_CSV, MANUFACTURING_CSV)
     
@@ -849,16 +819,24 @@ if __name__ == "__main__":
             test_scenario=1              # 시나리오 1: 시간대별 명확한 구분
         )
         
+    except FileNotFoundError as e:
+        print(f"❌ 파일 오류: {e}")
     except Exception as e:
-        print(f"오류 발생: {e}")
+        print(f"❌ 오류 발생: {e}")
         
     # 개별 실행 옵션 (필요시 주석 해제)
     # # 유압 시뮬레이터만 실행
-    # hydraulic_sim = HydraulicSimulator(HYDRAULIC_CSV)
-    # hydraulic_sim.load_data()
-    # hydraulic_sim.run(interval=1.0)
+    # try:
+    #     hydraulic_sim = HydraulicSimulator(HYDRAULIC_CSV)
+    #     hydraulic_sim.load_data()
+    #     hydraulic_sim.run(interval=1.0)
+    # except Exception as e:
+    #     print(f"유압 시뮬레이터 오류: {e}")
     
     # # 제조 시뮬레이터만 실행
-    # manufacturing_sim = ManufacturingSimulator(MANUFACTURING_CSV)
-    # manufacturing_sim.load_data()
-    # manufacturing_sim.run(interval=5.0)
+    # try:
+    #     manufacturing_sim = ManufacturingSimulator(MANUFACTURING_CSV)
+    #     manufacturing_sim.load_data()
+    #     manufacturing_sim.run(interval=5.0)
+    # except Exception as e:
+    #     print(f"제조 시뮬레이터 오류: {e}")
