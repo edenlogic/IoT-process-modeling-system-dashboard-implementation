@@ -91,7 +91,8 @@ def get_quality_trend_from_api(use_real_api=True):
 def get_action_history_from_api():
     """FastAPI에서 인터락/바이패스 조치 이력 가져오기"""
     try:
-        response = requests.get(f"{API_BASE_URL}/action_history", timeout=5)
+        # /api/action_history 엔드포인트 사용 (대시보드용 포맷된 데이터)
+        response = requests.get(f"{API_BASE_URL}/action_history?limit=50", timeout=5)
         if response.status_code == 200:
             return response.json()
         else:
@@ -1462,87 +1463,270 @@ def main():
         else:
             st.info("현재 알림이 없습니다.")
 
+    # ayj_dashboard.py의 조치 이력 탭 부분 수정 (tabs[3] 부분)
+
     with tabs[3]:  # 조치 이력
         st.markdown('<div class="main-header no-translate" translate="no">📋 조치 이력</div>', unsafe_allow_html=True)
         st.write("인터락 및 바이패스 조치 이력을 확인할 수 있습니다.")
         
+        # 새로고침 버튼 추가
+        col_refresh = st.columns([10, 1])
+        with col_refresh[1]:
+            if st.button("🔄", help="조치 이력 새로고침"):
+                st.rerun()
+        
         # 조치 통계 표시
         action_stats = get_action_stats_from_api()
-        if action_stats:
-            col1, col2, col3 = st.columns(3)
+        if action_stats and action_stats.get('total_actions', 0) > 0:
+            col1, col2, col3, col4 = st.columns(4)
             with col1:
                 st.metric("총 조치 수", f"{action_stats.get('total_actions', 0)}건")
             with col2:
                 st.metric("인터락 조치", f"{action_stats.get('interlock_count', 0)}건", 
-                         delta="설비 정지", delta_color="normal")
+                        delta="설비 정지", delta_color="normal")
             with col3:
                 st.metric("바이패스 조치", f"{action_stats.get('bypass_count', 0)}건",
-                         delta="일시 무시", delta_color="normal")
+                        delta="일시 무시", delta_color="normal")
+            with col4:
+                # 최근 조치 정보 추가
+                if action_stats.get('last_action'):
+                    last_action = action_stats['last_action']
+                    last_time = last_action.get('action_time', '').split('T')[0]
+                    st.metric("최근 조치", last_time, 
+                            delta=f"{last_action.get('equipment', '')}", delta_color="off")
         
         # 조치 이력 테이블
         st.subheader("최근 조치 이력")
+        
+        # 필터 추가
+        filter_col1, filter_col2, filter_col3 = st.columns(3)
+        with filter_col1:
+            equipment_filter = st.selectbox("설비 필터", ["전체"] + ["press_001", "press_002", "weld_001", "weld_002"])
+        with filter_col2:
+            action_type_filter = st.selectbox("조치 타입", ["전체", "인터락", "바이패스"])
+        with filter_col3:
+            assigned_to_filter = st.selectbox("담당자", ["전체", "SMS", "대시보드"])
+        
         action_history = get_action_history_from_api()
+        
+        # 웹 링크 통계도 함께 표시
+        link_stats = None
+        try:
+            link_response = requests.get(f"{API_BASE_URL}/link_stats", timeout=5)
+            if link_response.status_code == 200:
+                link_stats = link_response.json()
+        except:
+            pass
+
+        if link_stats:
+            st.info(f"📊 웹 링크 통계: 총 {link_stats['total_links']}개 생성, "
+                    f"{link_stats['active_links']}개 활성, {link_stats['processed_links']}개 처리 완료")
         
         if action_history:
             # 데이터프레임 생성
             history_data = []
             for action in action_history:
+                # 필터링
+                if equipment_filter != "전체" and action.get('equipment', '') != equipment_filter:
+                    continue
+                if action_type_filter == "인터락" and action.get('action_type') != 'interlock':
+                    continue
+                if action_type_filter == "바이패스" and action.get('action_type') != 'bypass':
+                    continue
+                if assigned_to_filter == "SMS" and not action.get('assigned_to', '').startswith('sms_'):
+                    continue
+                if assigned_to_filter == "대시보드" and not action.get('assigned_to', '').startswith('dashboard_'):
+                    continue
+                    
+                # 시간 포맷팅 개선
+                action_time = action.get('action_time', '')
+                if 'T' in action_time:
+                    date_part = action_time.split('T')[0]
+                    time_part = action_time.split('T')[1][:8]
+                    formatted_time = f"{date_part} {time_part}"
+                else:
+                    formatted_time = action_time
+                    
+                # 담당자 표시 개선
+                assigned_to = action.get('assigned_to', '')
+                if assigned_to.startswith('sms_'):
+                    phone = assigned_to.replace('sms_', '')
+                    assigned_display = f"📱 SMS ({phone[-4:]})"
+                elif assigned_to.startswith('dashboard_'):
+                    assigned_display = f"💻 대시보드"
+                else:
+                    assigned_display = assigned_to
+                    
                 history_data.append({
-                    '시간': action.get('action_time', '').split('T')[1][:8] if 'T' in action.get('action_time', '') else '',
+                    '시간': formatted_time,
                     '설비': action.get('equipment', ''),
-                    '센서': action.get('sensor_type', ''),
+                    '센서': {
+                        'temperature': '온도',
+                        'pressure': '압력',
+                        'vibration': '진동',
+                        'power': '전력'
+                    }.get(action.get('sensor_type', ''), action.get('sensor_type', '')),
                     '조치': '🔒 인터락' if action.get('action_type') == 'interlock' else '⏭️ 바이패스',
-                    '담당자': action.get('assigned_to', ''),
-                    '측정값': f"{action.get('value', 0):.2f}",
-                    '임계값': f"{action.get('threshold', 0):.2f}",
-                    '심각도': {'error': '🔴 Error', 'warning': '🟠 Warning', 'info': '🔵 Info'}.get(action.get('severity', ''), ''),
+                    '담당자': assigned_display,
+                    '측정값': f"{float(action.get('value', 0)):.2f}" if action.get('value') is not None else "-",
+                    '임계값': f"{float(action.get('threshold', 0)):.2f}" if action.get('threshold') is not None else "-",
+                    '심각도': {
+                        'error': '🔴 Error', 
+                        'warning': '🟠 Warning', 
+                        'info': '🔵 Info'
+                    }.get(action.get('severity', ''), ''),
+                    '상태': {
+                        'completed': '✅ 완료',
+                        '완료': '✅ 완료',
+                        '인터락': '🔒 실행',
+                        '바이패스': '⏭️ 적용'
+                    }.get(action.get('status', ''), action.get('status', '')),
+                    '알림번호': f"#{action.get('alert_number', '-')}" if action.get('alert_number') else '-'
                 })
             
-            history_df = pd.DataFrame(history_data)
-            st.dataframe(history_df, use_container_width=True, height=400)
-            
-            # 설비별 통계
-            if 'equipment_stats' in action_stats and action_stats['equipment_stats']:
-                st.subheader("설비별 조치 통계")
-                eq_stats_data = []
-                for eq, stats in action_stats['equipment_stats'].items():
-                    eq_stats_data.append({
-                        '설비': eq,
-                        '인터락': stats.get('interlock', 0),
-                        '바이패스': stats.get('bypass', 0),
-                        '총 조치': stats.get('interlock', 0) + stats.get('bypass', 0)
-                    })
+            if history_data:
+                history_df = pd.DataFrame(history_data)
                 
-                eq_stats_df = pd.DataFrame(eq_stats_data)
-                eq_stats_df = eq_stats_df.sort_values('총 조치', ascending=False)
-                
-                # 막대 그래프
-                fig = go.Figure()
-                fig.add_trace(go.Bar(
-                    name='인터락',
-                    x=eq_stats_df['설비'],
-                    y=eq_stats_df['인터락'],
-                    marker_color='#ef4444'
-                ))
-                fig.add_trace(go.Bar(
-                    name='바이패스',
-                    x=eq_stats_df['설비'],
-                    y=eq_stats_df['바이패스'],
-                    marker_color='#f59e0b'
-                ))
-                
-                fig.update_layout(
-                    barmode='stack',
-                    title='설비별 조치 현황',
-                    height=300,
-                    margin=dict(l=0, r=0, t=30, b=0),
-                    plot_bgcolor='white',
-                    paper_bgcolor='white'
+                # 스타일링된 데이터프레임 표시
+                st.dataframe(
+                    history_df, 
+                    use_container_width=True, 
+                    height=400,
+                    column_config={
+                        "시간": st.column_config.TextColumn("시간", width="medium"),
+                        "설비": st.column_config.TextColumn("설비", width="small"),
+                        "센서": st.column_config.TextColumn("센서", width="small"),
+                        "조치": st.column_config.TextColumn("조치", width="small"),
+                        "담당자": st.column_config.TextColumn("담당자", width="medium"),
+                        "측정값": st.column_config.TextColumn("측정값", width="small"),
+                        "임계값": st.column_config.TextColumn("임계값", width="small"),
+                        "심각도": st.column_config.TextColumn("심각도", width="small"),
+                        "상태": st.column_config.TextColumn("상태", width="small"),
+                        "알림번호": st.column_config.TextColumn("번호", width="small")
+                    }
                 )
                 
-                st.plotly_chart(fig, use_container_width=True)
+                # 설비별 통계
+                if 'equipment_stats' in action_stats and action_stats['equipment_stats']:
+                    st.subheader("설비별 조치 통계")
+                    eq_stats_data = []
+                    for eq, stats in action_stats['equipment_stats'].items():
+                        eq_stats_data.append({
+                            '설비': eq,
+                            '인터락': stats.get('interlock', 0),
+                            '바이패스': stats.get('bypass', 0),
+                            '총 조치': stats.get('interlock', 0) + stats.get('bypass', 0)
+                        })
+                    
+                    eq_stats_df = pd.DataFrame(eq_stats_data)
+                    eq_stats_df = eq_stats_df.sort_values('총 조치', ascending=False)
+                    
+                    # 막대 그래프
+                    fig = go.Figure()
+                    fig.add_trace(go.Bar(
+                        name='인터락',
+                        x=eq_stats_df['설비'],
+                        y=eq_stats_df['인터락'],
+                        marker_color='#ef4444',
+                        text=eq_stats_df['인터락'],
+                        textposition='auto',
+                    ))
+                    fig.add_trace(go.Bar(
+                        name='바이패스',
+                        x=eq_stats_df['설비'],
+                        y=eq_stats_df['바이패스'],
+                        marker_color='#f59e0b',
+                        text=eq_stats_df['바이패스'],
+                        textposition='auto',
+                    ))
+                    
+                    fig.update_layout(
+                        barmode='stack',
+                        title='설비별 조치 현황',
+                        height=300,
+                        margin=dict(l=0, r=0, t=30, b=0),
+                        plot_bgcolor='white',
+                        paper_bgcolor='white',
+                        showlegend=True,
+                        legend=dict(
+                            orientation="h",
+                            yanchor="bottom",
+                            y=1.02,
+                            xanchor="right",
+                            x=1
+                        )
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                # 시간대별 조치 추이 (추가)
+                st.subheader("시간대별 조치 추이")
+                
+                # 시간별 그룹화
+                time_stats = {}
+                for action in action_history:
+                    action_time = action.get('action_time', '')
+                    if 'T' in action_time:
+                        hour = action_time.split('T')[1][:2]
+                        if hour not in time_stats:
+                            time_stats[hour] = {'interlock': 0, 'bypass': 0}
+                        
+                        if action.get('action_type') == 'interlock':
+                            time_stats[hour]['interlock'] += 1
+                        else:
+                            time_stats[hour]['bypass'] += 1
+                
+                if time_stats:
+                    hours = sorted(time_stats.keys())
+                    interlock_counts = [time_stats[h]['interlock'] for h in hours]
+                    bypass_counts = [time_stats[h]['bypass'] for h in hours]
+                    
+                    fig2 = go.Figure()
+                    fig2.add_trace(go.Scatter(
+                        x=hours,
+                        y=interlock_counts,
+                        mode='lines+markers',
+                        name='인터락',
+                        line=dict(color='#ef4444', width=2),
+                        marker=dict(size=8)
+                    ))
+                    fig2.add_trace(go.Scatter(
+                        x=hours,
+                        y=bypass_counts,
+                        mode='lines+markers',
+                        name='바이패스',
+                        line=dict(color='#f59e0b', width=2),
+                        marker=dict(size=8)
+                    ))
+                    
+                    fig2.update_layout(
+                        title='시간대별 조치 건수',
+                        xaxis_title='시간',
+                        yaxis_title='조치 건수',
+                        height=300,
+                        margin=dict(l=0, r=0, t=30, b=0),
+                        plot_bgcolor='white',
+                        paper_bgcolor='white',
+                        showlegend=True
+                    )
+                    
+                    st.plotly_chart(fig2, use_container_width=True)
+                    
+            else:
+                st.info("필터 조건에 맞는 조치 이력이 없습니다.")
         else:
-            st.info("조치 이력이 없습니다.")
+            st.info("조치 이력이 없습니다. SMS 응답(1: 인터락, 2: 바이패스)이 처리되면 여기에 표시됩니다.")
+            
+            # 테스트 버튼 추가 (개발용)
+            if st.button("🧪 테스트 조치 생성", help="테스트용 조치 이력을 생성합니다"):
+                try:
+                    response = requests.post(f"{API_BASE_URL}/test/create_action", timeout=5)
+                    if response.status_code == 200:
+                        st.success("테스트 조치가 생성되었습니다!")
+                        time.sleep(1)
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"테스트 생성 실패: {e}")
 
     with tabs[4]:  # 리포트
         st.markdown('<div class="main-header no-translate" translate="no">📈 리포트</div>', unsafe_allow_html=True)
