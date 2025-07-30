@@ -1,0 +1,5 @@
+FINAL_FEATURE_NAMES = [
+    'PS1_max', 'PS1_diff_std', 'PS2_diff_std', 'PS3_max', 'PS3_p2p',
+    'TS1_p2p', 'VS1_min', 'VS1_q25', 'CP_mean', 'CP_min', 'CP_max',
+    'CP_median', 'CP_rms', 'CP_q25', 'CP_q75'
+]

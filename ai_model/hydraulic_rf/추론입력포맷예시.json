@@ -1,0 +1,17 @@
+{
+    "PS1_max": 162.5,
+    "PS1_diff_std": 0.35,
+    "PS2_diff_std": 0.41,
+    "PS3_max": 2.05,
+    "PS3_p2p": 0.12,
+    "TS1_p2p": 1.5,
+    "VS1_min": 0.52,
+    "VS1_q25": 0.58,
+    "CP_mean": 1.8,
+    "CP_min": 1.2,
+    "CP_max": 2.4,
+    "CP_median": 1.8,
+    "CP_rms": 1.9,
+    "CP_q25": 1.6,
+    "CP_q75": 2.0
+}
