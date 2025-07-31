@@ -67,6 +67,46 @@ class MultiEquipmentSimulator:
             Equipment("pack_002", "포장기 #2", "포장"),
         ]
         
+        # DB에 실제로 존재하는 설비 ID만 필터링
+        try:
+            
+            # API 서버가 준비될 때까지 최대 10초 대기
+            for attempt in range(10):
+                try:
+                    resp = requests.get("http://localhost:8000/api/equipment_status", timeout=3)
+                    if resp.status_code == 200:
+                        equipment_list = resp.json()
+                        db_ids = set([item['id'] for item in equipment_list])
+                        logger.info(f"🔍 API 응답: {len(equipment_list)}개 설비 발견")
+                        if len(db_ids) > 0:  # 설비가 실제로 있으면
+                            self.equipments = [eq for eq in self.equipments if eq.id in db_ids]
+                            logger.info(f"✅ DB에서 {len(self.equipments)}개 설비 로드 완료")
+                            # 설비 목록 출력
+                            for eq in self.equipments:
+                                logger.info(f"  - {eq.id}: {eq.name}")
+                            break
+                        else:
+                            logger.warning(f"⚠️ DB에 설비가 없음 (시도 {attempt+1}/10), 1초 대기...")
+                            time.sleep(1)
+                    else:
+                        logger.warning(f"⚠️ API 실패: {resp.status_code} (시도 {attempt+1}/10), 1초 대기...")
+                        time.sleep(1)
+                except Exception as e:
+                    logger.warning(f"⚠️ API 연결 실패 (시도 {attempt+1}/10): {e}, 1초 대기...")
+                    time.sleep(1)
+            else:
+                logger.warning("⚠️ API 서버 연결 실패, 전체 설비 사용")
+        except Exception as e:
+            logger.warning(f"⚠️ 설비 리스트 API 예외: {e}, 전체 설비 사용")
+        
+        # 설비가 없으면 시뮬레이터 종료
+        if len(self.equipments) == 0:
+            logger.error("❌ 설비가 없어서 시뮬레이터를 종료합니다.")
+            raise Exception("설비가 없습니다. API 서버를 확인해주세요.")
+        
+        # 알림 카운터 초기화
+        self.alert_count = {'error': 0, 'warning': 0}
+        
         # 센서 타입별 임계값 정의 (설비 타입별로 다르게 설정)
         self.sensor_thresholds = {
             "프레스": {
@@ -178,7 +218,7 @@ class MultiEquipmentSimulator:
         self.running = False
         
     def plan_alerts(self, duration_seconds: int = 120):
-        """2분(120초) 동안 발생할 알람 계획 수립"""
+        """2분(120초) 동안 발생할 알람 계획 수립 - 20초마다 랜덤 알림 생성"""
         self.planned_alerts = []
         
         # 가능한 모든 조합 (16개 설비 × 3개 센서 = 48개)
@@ -187,44 +227,26 @@ class MultiEquipmentSimulator:
             for sensor_type in ["temperature", "pressure", "vibration"]:
                 all_combinations.append((equipment, sensor_type))
         
-        # 랜덤하게 섞기
-        random.shuffle(all_combinations)
+        # 20초마다 알림 생성 (총 6개: 20초, 40초, 60초, 80초, 100초, 120초)
+        alert_times = [20, 40, 60, 80, 100, 120]
         
-        # 기본 시간에 랜덤 변동 추가 (±5초)
-        error_base_times = [30, 70]  # 경고 알람 기본 시간
-        warning_base_times = [35, 65, 95]  # 주의 알람 기본 시간
-        
-        error_times = [base + random.uniform(-5, 5) for base in error_base_times]
-        warning_times = [base + random.uniform(-5, 5) for base in warning_base_times]
-        
-        # 시간이 유효한 범위 내에 있는지 확인
-        error_times = [max(5, min(duration_seconds-5, t)) for t in error_times]
-        warning_times = [max(5, min(duration_seconds-5, t)) for t in warning_times]
-        
-        # 경고(error) 알람 2개 계획
-        for i in range(2):
-            equipment, sensor_type = all_combinations[i]
+        for i, alert_time in enumerate(alert_times):
+            # 랜덤하게 설비와 센서 선택
+            equipment, sensor_type = random.choice(all_combinations)
+            # 랜덤하게 심각도 선택 (주의/경고)
+            severity = random.choice(["warning", "error"])
+            
             self.planned_alerts.append({
-                "time": error_times[i],
+                "time": alert_time,
                 "equipment": equipment,
                 "sensor_type": sensor_type,
-                "severity": "error"
-            })
-        
-        # 주의(warning) 알람 3개 계획
-        for i in range(2, 5):
-            equipment, sensor_type = all_combinations[i]
-            self.planned_alerts.append({
-                "time": warning_times[i-2],
-                "equipment": equipment,
-                "sensor_type": sensor_type,
-                "severity": "warning"
+                "severity": severity
             })
         
         # 시간순으로 정렬
         self.planned_alerts.sort(key=lambda x: x["time"])
         
-        logger.info("📋 알람 계획 수립 완료:")
+        logger.info(f"📋 알람 계획 수립 완료 (총 {len(self.planned_alerts)}개, 20초마다):")
         for idx, alert in enumerate(self.planned_alerts):
             severity_label = "경고(HH)" if alert['severity'] == 'error' else "주의(H)"
             logger.info(f"  {idx+1}. {alert['time']:.1f}초: {alert['equipment'].name} "
@@ -278,6 +300,26 @@ class MultiEquipmentSimulator:
         except Exception as e:
             logger.error(f"[센서] 데이터 전송 오류: {e}")
     
+    def send_system_alert(self, equipment: Equipment, efficiency: float):
+        """시스템 알림 전송 (가동률 0% 등)"""
+        alert_data = {
+            "equipment": equipment.id,
+            "sensor_type": "system",
+            "value": efficiency,
+            "threshold": 5.0,
+            "severity": "error",
+            "timestamp": datetime.now().isoformat(),
+            "message": f"{equipment.name} 가동률 {efficiency:.1f}% - 시스템 이상 감지"
+        }
+        
+        try:
+            response = requests.post(ALERT_API, json=alert_data, timeout=5)
+            if response.status_code == 200:
+                logger.info(f"🚨 [SYSTEM] {equipment.name} 가동률 {efficiency:.1f}% - 시스템 알림 발생")
+                self.alert_count["error"] += 1
+        except Exception as e:
+            logger.error(f"[시스템알림] 전송 오류: {e}")
+    
     def send_alert(self, equipment: Equipment, sensor_type: str, 
                    value: float, severity: str):
         """알람 전송"""
@@ -308,12 +350,6 @@ class MultiEquipmentSimulator:
                 logger.info(f"🚨 [{severity.upper()}] {equipment.name} "
                            f"{sensor_type} = {value}{threshold.unit}")
                 self.alert_count[severity] += 1
-                
-                # 설비 상태 업데이트
-                if severity == "error":
-                    self.update_equipment_status(equipment.id, "오류", 60.0)
-                else:
-                    self.update_equipment_status(equipment.id, "주의", 80.0)
         except Exception as e:
             logger.error(f"[알람] 전송 오류: {e}")
     
@@ -321,9 +357,12 @@ class MultiEquipmentSimulator:
         """설비 상태 업데이트"""
         url = f"{EQUIPMENT_STATUS_API}/{equipment_id}/status"
         try:
+            # API 서버에서 status와 efficiency를 쿼리 파라미터로 받음
             response = requests.put(url, params={"status": status, "efficiency": efficiency}, timeout=5)
             if response.status_code == 200:
-                logger.info(f"[설비상태] {equipment_id} 상태={status}, 효율={efficiency:.1f}%")
+                logger.info(f"[설비상태] {equipment_id} 상태={status}, 효율={efficiency:.1f}% - API 성공")
+            else:
+                logger.error(f"[설비상태] 업데이트 실패: {response.status_code} - {response.text}")
         except Exception as e:
             logger.error(f"[설비상태] 업데이트 오류: {e}")
     
@@ -332,17 +371,18 @@ class MultiEquipmentSimulator:
         self.running = True
         self.start_time = time.time()
         
-        # 알람 계획 수립
-        self.plan_alerts(duration_seconds)
-        
         logger.info("="*50)
         logger.info("🚀 다중 설비 시뮬레이터 시작!")
         logger.info(f"⏱️ 실행 시간: {duration_seconds}초")
-        logger.info(f"🎯 목표: 경고(HH) 2개, 주의(H) 3개")
         logger.info("="*50)
         
-        # 다음 알람 인덱스
+        # 알림 카운터 초기화
+        alert_counter = 0
+        # 20초마다 알림 생성 (총 6개: 20초, 40초, 60초, 80초, 100초, 120초)
+        alert_times = [20, 40, 60, 80, 100, 120]
         next_alert_idx = 0
+        last_alert_check = 0
+        alerted_equipment = set()  # 이미 알림이 생성된 장비 추적
         
         while self.running:
             current_time = time.time()
@@ -351,51 +391,62 @@ class MultiEquipmentSimulator:
             if elapsed >= duration_seconds:
                 break
             
-            # 계획된 알람 확인
-            force_alerts = []
-            while (next_alert_idx < len(self.planned_alerts) and 
-                   self.planned_alerts[next_alert_idx]["time"] <= elapsed):
-                force_alerts.append(self.planned_alerts[next_alert_idx])
-                # 알람 활성화 로그 (INFO 레벨로 유지)
-                alert = self.planned_alerts[next_alert_idx]
-                severity_label = "경고(HH)" if alert['severity'] == 'error' else "주의(H)"
-                logger.info(f"⏰ [{elapsed:.1f}초] {alert['equipment'].name} "
-                           f"{alert['sensor_type']} {severity_label} 알람 예정")
+            # 고정된 시간에 알림 생성 (총 6개) - 우선순위로 처리
+            if (next_alert_idx < len(alert_times) and 
+                elapsed >= alert_times[next_alert_idx] and
+                elapsed - last_alert_check >= 0.5):  # 최소 0.5초 간격으로 완화
+                
+                # 아직 알림이 생성되지 않은 장비들 중에서 선택
+                available_equipment = [eq for eq in self.equipments if eq.id not in alerted_equipment]
+                
+                # 모든 장비에 알림이 생성되었다면 초기화
+                if not available_equipment:
+                    alerted_equipment.clear()
+                    available_equipment = self.equipments
+                
+                # 랜덤 설비와 센서 선택
+                equipment = random.choice(available_equipment)
+                sensor_type = random.choice(["temperature", "pressure", "vibration"])
+                severity = random.choice(["warning", "error"])
+                
+                # 알림 발생
+                value = self.generate_sensor_value(equipment, sensor_type, severity)
+                self.send_alert(equipment, sensor_type, value, severity)
+                
+                # 알림 발생 시 설비 상태 업데이트
+                if severity == "error":
+                    status = "오류"
+                else:
+                    status = "주의"
+                efficiency = round(random.uniform(75.0, 98.0), 1)
+                self.update_equipment_status(equipment.id, status, efficiency)
+                
+                # 알림 생성된 장비 기록
+                alerted_equipment.add(equipment.id)
+                
+                alert_counter += 1
                 next_alert_idx += 1
+                last_alert_check = elapsed
+                logger.info(f"🚨 [알림 #{alert_counter}] {equipment.name} {sensor_type} {severity.upper()} - {value:.1f}")
+                
+                # 알림 생성 후 즉시 다음 루프로
+                continue
             
-            # 모든 설비의 센서 데이터 생성
-            for equipment in self.equipments:
-                for sensor_type in ["temperature", "pressure", "vibration"]:
-                    # 강제 알람 확인
-                    force_severity = None
-                    for force_alert in force_alerts:
-                        if (force_alert["equipment"].id == equipment.id and 
-                            force_alert["sensor_type"] == sensor_type):
-                            force_severity = force_alert["severity"]
-                            break
+            # 센서 데이터 생성은 알림 생성 후에 처리 (더 많은 빈도로)
+            if random.random() < 0.8:  # 80% 확률로 센서 데이터 생성 (기존 50%에서 증가)
+                for equipment in self.equipments:
+                    # 설비 상태 업데이트 (랜덤 간격)
+                    if random.random() < 0.2:  # 20% 확률로 설비 상태 업데이트
+                        efficiency = round(random.uniform(75.0, 98.0), 1)
+                        status = "정상"
+                        self.update_equipment_status(equipment.id, status, efficiency)
+                        logger.info(f"[설비상태] {equipment.name}: {efficiency:.1f}% ({status})")
                     
-                    # 센서값 생성
-                    value = self.generate_sensor_value(equipment, sensor_type, force_severity)
-                    
-                    # 센서 데이터 전송
-                    self.send_sensor_data(equipment, sensor_type, value)
-                    
-                    # 알람 체크
-                    if force_severity:
-                        self.send_alert(equipment, sensor_type, value, force_severity)
-                    else:
-                        # 자연 발생 알람 체크 (낮은 확률)
-                        threshold = self.sensor_thresholds[equipment.type][sensor_type]
-                        if value >= threshold.error_threshold and random.random() < 0.1:
-                            self.send_alert(equipment, sensor_type, value, "error")
-                        elif value >= threshold.warning_threshold and random.random() < 0.05:
-                            self.send_alert(equipment, sensor_type, value, "warning")
-            
-            # 진행 상황 출력 (20초마다)
-            if int(elapsed) % 20 == 0 and int(elapsed) > 0:
-                remaining = duration_seconds - elapsed
-                logger.info(f"[진행 {elapsed:.0f}초] 경고: {self.alert_count['error']}개, "
-                           f"주의: {self.alert_count['warning']}개 (남은시간: {remaining:.0f}초)")
+                    # 센서 데이터 생성 및 전송 (더 많은 빈도로)
+                    if random.random() < 0.6:  # 60% 확률로 센서 데이터 전송 (기존 30%에서 증가)
+                        sensor_type = random.choice(["temperature", "pressure", "vibration"])
+                        value = self.generate_sensor_value(equipment, sensor_type)
+                        self.send_sensor_data(equipment, sensor_type, value)
             
             time.sleep(interval)
         
@@ -419,8 +470,8 @@ if __name__ == "__main__":
     simulator = MultiEquipmentSimulator()
     
     try:
-        # 2분간 실행, 2초마다 데이터 생성
-        simulator.run(duration_seconds=120, interval=2.0)
+        # 2분간 실행, 0.1초마다 데이터 생성 (더 빠른 속도로 더 많은 데이터 생성)
+        simulator.run(duration_seconds=120, interval=0.1)
         
     except KeyboardInterrupt:
         logger.info("\n사용자에 의해 중지됨")

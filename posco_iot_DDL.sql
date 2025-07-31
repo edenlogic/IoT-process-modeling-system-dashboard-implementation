@@ -95,3 +95,35 @@ CREATE TABLE IF NOT EXISTS users (
     role TEXT,                            -- 역할(admin, operator 등)
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ======================
+-- 품질 트렌드 테이블
+-- (일별 품질률, 불량률, 생산량 추세)
+-- ======================
+CREATE TABLE IF NOT EXISTS quality_trend (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, -- 고유번호
+    days TEXT,                            -- 요일 배열 JSON (월, 화, 수, ...)
+    quality_rates TEXT,                   -- 품질률 배열 JSON
+    defect_rates TEXT,                    -- 불량률 배열 JSON
+    production_volume TEXT,               -- 생산량 배열 JSON
+    timestamp TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ======================
+-- 생산성 KPI 테이블
+-- (일일/주간/월간 생산성 지표)
+-- ======================
+CREATE TABLE IF NOT EXISTS production_kpi (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, -- 고유번호
+    daily_target INTEGER NOT NULL,        -- 일일 목표
+    daily_actual INTEGER NOT NULL,        -- 일일 실적
+    weekly_target INTEGER NOT NULL,       -- 주간 목표
+    weekly_actual INTEGER NOT NULL,       -- 주간 실적
+    monthly_target INTEGER NOT NULL,      -- 월간 목표
+    monthly_actual INTEGER NOT NULL,      -- 월간 실적
+    oee REAL NOT NULL,                    -- OEE(%)
+    availability REAL NOT NULL,           -- 가동률(%)
+    performance REAL NOT NULL,            -- 성능률(%)
+    quality REAL NOT NULL,                -- 품질률(%)
+    timestamp TEXT DEFAULT CURRENT_TIMESTAMP
+);
