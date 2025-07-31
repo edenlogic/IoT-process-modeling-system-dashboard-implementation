@@ -225,80 +225,80 @@ class FaultPredictor:
         return result
 
     def determine_alert_level(self, probabilities):
-    """
-    확률 딕셔너리를 받아서 경고 레벨 결정
-    
-    Args:
-        probabilities: {
-            'normal': 0.65,
-            'bearing_fault': 0.20,
-            'roll_misalignment': 0.10,
-            'motor_overload': 0.03,
-            'lubricant_shortage': 0.02
-        }
-    
-    Returns:
-        dict: {
-            'alert_level': '정상' | '모니터링 필요' | '점검 필요',
-            'alert_color': 'green' | 'yellow' | 'red',
-            'recommended_action': '구체적인 조치사항'
-        }
-    """
-    
-    # 확률 값들 추출
-    normal_prob = probabilities.get('normal', 0.0)
-    
-    # 고장 확률들 합계
-    fault_probs = {k: v for k, v in probabilities.items() if k != 'normal'}
-    total_fault_prob = sum(fault_probs.values())
-    
-    # 가장 높은 고장 확률
-    if fault_probs:
-        max_fault_type = max(fault_probs, key=fault_probs.get)
-        max_fault_prob = fault_probs[max_fault_type]
-    else:
-        max_fault_type = None
-        max_fault_prob = 0.0
-    
-    # 고장 유형 한글명
-    fault_korean = {
-        'bearing_fault': '베어링 고장',
-        'roll_misalignment': '롤 정렬 불량',
-        'motor_overload': '모터 과부하',
-        'lubricant_shortage': '윤활유 부족'
-    }
-    
-    # 🎯 경고 레벨 결정
-    if normal_prob >= 0.8:
-        # 정상 확률 80% 이상
-        return {
-            'alert_level': '정상',
-            'alert_color': 'green',
-            'recommended_action': '정상 운영 계속'
-        }
-    
-    elif total_fault_prob >= 0.7 or max_fault_prob >= 0.7:
-        # 고장 확률 합계 70% 이상 OR 특정 고장 70% 이상
-        fault_name = fault_korean.get(max_fault_type, '고장')
-        return {
-            'alert_level': '점검 필요',
-            'alert_color': 'red',
-            'recommended_action': f'즉시 점검 필요 ({fault_name} 가능성 높음)'
-        }
-    
-    else:
-        # 나머지 모든 경우
-        if max_fault_prob >= 0.3:
-            fault_name = fault_korean.get(max_fault_type, '고장')
-            action = f'주의 관찰 ({fault_name} 의심)'
+        """
+        확률 딕셔너리를 받아서 경고 레벨 결정
+        
+        Args:
+            probabilities: {
+                'normal': 0.65,
+                'bearing_fault': 0.20,
+                'roll_misalignment': 0.10,
+                'motor_overload': 0.03,
+                'lubricant_shortage': 0.02
+            }
+        
+        Returns:
+            dict: {
+                'alert_level': '정상' | '모니터링 필요' | '점검 필요',
+                'alert_color': 'green' | 'yellow' | 'red',
+                'recommended_action': '구체적인 조치사항'
+            }
+        """
+        
+        # 확률 값들 추출
+        normal_prob = probabilities.get('normal', 0.0)
+        
+        # 고장 확률들 합계
+        fault_probs = {k: v for k, v in probabilities.items() if k != 'normal'}
+        total_fault_prob = sum(fault_probs.values())
+        
+        # 가장 높은 고장 확률
+        if fault_probs:
+            max_fault_type = max(fault_probs, key=fault_probs.get)
+            max_fault_prob = fault_probs[max_fault_type]
         else:
-            action = '센서 데이터 지속 모니터링'
-            
-        return {
-            'alert_level': '모니터링 필요',
-            'alert_color': 'yellow',
-            'recommended_action': action
+            max_fault_type = None
+            max_fault_prob = 0.0
+        
+        # 고장 유형 한글명
+        fault_korean = {
+            'bearing_fault': '베어링 고장',
+            'roll_misalignment': '롤 정렬 불량',
+            'motor_overload': '모터 과부하',
+            'lubricant_shortage': '윤활유 부족'
         }
+        
+        # 🎯 경고 레벨 결정
+        if normal_prob >= 0.8:
+            # 정상 확률 80% 이상
+            return {
+                'alert_level': '정상',
+                'alert_color': 'green',
+                'recommended_action': '정상 운영 계속'
+            }
+        
+        elif total_fault_prob >= 0.7 or max_fault_prob >= 0.7:
+            # 고장 확률 합계 70% 이상 OR 특정 고장 70% 이상
+            fault_name = fault_korean.get(max_fault_type, '고장')
+            return {
+                'alert_level': '점검 필요',
+                'alert_color': 'red',
+                'recommended_action': f'즉시 점검 필요 ({fault_name} 가능성 높음)'
+            }
+        
+        else:
+            # 나머지 모든 경우
+            if max_fault_prob >= 0.3:
+                fault_name = fault_korean.get(max_fault_type, '고장')
+                action = f'주의 관찰 ({fault_name} 의심)'
+            else:
+                action = '센서 데이터 지속 모니터링'
+                
+            return {
+                'alert_level': '모니터링 필요',
+                'alert_color': 'yellow',
+                'recommended_action': action
+            }
 
 
 # ===================================================================

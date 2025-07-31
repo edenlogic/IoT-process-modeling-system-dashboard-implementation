@@ -35,7 +35,12 @@ class HydraulicAnomalyPredictor:
         """모델과 스케일러를 로드합니다."""
         try:
             model_path = os.path.join(self.model_dir, 'best_model.pkl')
-            scaler_path = os.path.join(self.model_dir, 'scaler.pkl')
+            # 수정된 스케일러 사용
+            scaler_path = os.path.join(self.model_dir, 'scaler_fixed.pkl')
+            
+            # 수정된 스케일러가 없으면 원본 사용
+            if not os.path.exists(scaler_path):
+                scaler_path = os.path.join(self.model_dir, 'scaler.pkl')
 
             self.model = joblib.load(model_path)
             self.scaler = joblib.load(scaler_path)

@@ -1,14 +1,10 @@
-import numpy as np
 import requests
-import json
 import time
 import logging
-from datetime import datetime, timedelta
-import threading
-from typing import Dict, List, Optional, Tuple
+from datetime import datetime
+from typing import Optional, Tuple
 import random
 from dataclasses import dataclass
-from collections import defaultdict
 
 # 로깅 설정
 logging.basicConfig(
@@ -211,46 +207,11 @@ class MultiEquipmentSimulator:
             }
         }
         
-        # 알람 관리
-        self.planned_alerts = []  # 발생시킬 알람 계획
-        self.sent_alerts = set()  # 이미 발송한 알람
+        # 알림 카운터 초기화
         self.alert_count = {"error": 0, "warning": 0}
         self.running = False
         
-    def plan_alerts(self, duration_seconds: int = 120):
-        """2분(120초) 동안 발생할 알람 계획 수립 - 20초마다 랜덤 알림 생성"""
-        self.planned_alerts = []
-        
-        # 가능한 모든 조합 (16개 설비 × 3개 센서 = 48개)
-        all_combinations = []
-        for equipment in self.equipments:
-            for sensor_type in ["temperature", "pressure", "vibration"]:
-                all_combinations.append((equipment, sensor_type))
-        
-        # 20초마다 알림 생성 (총 6개: 20초, 40초, 60초, 80초, 100초, 120초)
-        alert_times = [20, 40, 60, 80, 100, 120]
-        
-        for i, alert_time in enumerate(alert_times):
-            # 랜덤하게 설비와 센서 선택
-            equipment, sensor_type = random.choice(all_combinations)
-            # 랜덤하게 심각도 선택 (주의/경고)
-            severity = random.choice(["warning", "error"])
-            
-            self.planned_alerts.append({
-                "time": alert_time,
-                "equipment": equipment,
-                "sensor_type": sensor_type,
-                "severity": severity
-            })
-        
-        # 시간순으로 정렬
-        self.planned_alerts.sort(key=lambda x: x["time"])
-        
-        logger.info(f"📋 알람 계획 수립 완료 (총 {len(self.planned_alerts)}개, 20초마다):")
-        for idx, alert in enumerate(self.planned_alerts):
-            severity_label = "경고(HH)" if alert['severity'] == 'error' else "주의(H)"
-            logger.info(f"  {idx+1}. {alert['time']:.1f}초: {alert['equipment'].name} "
-                       f"{alert['sensor_type']} - {severity_label}")
+
     
     def generate_sensor_value(self, equipment: Equipment, sensor_type: str, 
                             force_severity: Optional[str] = None) -> float:
@@ -433,20 +394,19 @@ class MultiEquipmentSimulator:
                 continue
             
             # 센서 데이터 생성은 알림 생성 후에 처리 (더 많은 빈도로)
-            if random.random() < 0.8:  # 80% 확률로 센서 데이터 생성 (기존 50%에서 증가)
-                for equipment in self.equipments:
-                    # 설비 상태 업데이트 (랜덤 간격)
-                    if random.random() < 0.2:  # 20% 확률로 설비 상태 업데이트
-                        efficiency = round(random.uniform(75.0, 98.0), 1)
-                        status = "정상"
-                        self.update_equipment_status(equipment.id, status, efficiency)
-                        logger.info(f"[설비상태] {equipment.name}: {efficiency:.1f}% ({status})")
-                    
-                    # 센서 데이터 생성 및 전송 (더 많은 빈도로)
-                    if random.random() < 0.6:  # 60% 확률로 센서 데이터 전송 (기존 30%에서 증가)
-                        sensor_type = random.choice(["temperature", "pressure", "vibration"])
-                        value = self.generate_sensor_value(equipment, sensor_type)
-                        self.send_sensor_data(equipment, sensor_type, value)
+            # 매 루프마다 모든 설비에서 센서 데이터 생성 (확률 제거)
+            for equipment in self.equipments:
+                # 설비 상태 업데이트 (랜덤 간격)
+                if random.random() < 0.3:  # 30% 확률로 설비 상태 업데이트
+                    efficiency = round(random.uniform(75.0, 98.0), 1)
+                    status = "정상"
+                    self.update_equipment_status(equipment.id, status, efficiency)
+                    logger.info(f"[설비상태] {equipment.name}: {efficiency:.1f}% ({status})")
+                
+                # 센서 데이터 생성 및 전송 (매번 전송)
+                sensor_type = random.choice(["temperature", "pressure", "vibration"])
+                value = self.generate_sensor_value(equipment, sensor_type)
+                self.send_sensor_data(equipment, sensor_type, value)
             
             time.sleep(interval)
         
@@ -470,8 +430,8 @@ if __name__ == "__main__":
     simulator = MultiEquipmentSimulator()
     
     try:
-        # 2분간 실행, 0.1초마다 데이터 생성 (더 빠른 속도로 더 많은 데이터 생성)
-        simulator.run(duration_seconds=120, interval=0.1)
+        # 2분간 실행, 0.02초마다 데이터 생성 (매우 빠른 속도로 더 많은 데이터 생성)
+        simulator.run(duration_seconds=120, interval=0.02)
         
     except KeyboardInterrupt:
         logger.info("\n사용자에 의해 중지됨")

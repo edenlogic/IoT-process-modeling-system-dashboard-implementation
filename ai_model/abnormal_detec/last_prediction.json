@@ -1,0 +1,28 @@
+{
+  "timestamp": "2025-08-01T02:46:47.381278",
+  "model_type": "설비 이상 예측",
+  "prediction": {
+    "predicted_class": "normal",
+    "predicted_class_name": "normal",
+    "predicted_class_description": "정상",
+    "confidence": 0.7706970699282465,
+    "is_normal": true,
+    "probabilities": {
+      "normal": 0.7706970699282465,
+      "bearing_fault": 0.08424126472473276,
+      "roll_misalignment": 0.043843435524224365,
+      "motor_overload": 0.04417544035954129,
+      "lubricant_shortage": 0.057042789463255084
+    }
+  },
+  "alert": {
+    "alert_level": "모니터링 필요",
+    "alert_color": "yellow",
+    "recommended_action": "센서 데이터 지속 모니터링"
+  },
+  "input_data_shape": [
+    60,
+    4
+  ],
+  "status": "success"
+}

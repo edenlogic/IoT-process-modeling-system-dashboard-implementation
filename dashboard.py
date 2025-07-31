@@ -10,6 +10,7 @@ import json
 import io
 import base64
 import threading
+import os
 from streamlit_autorefresh import st_autorefresh
 import warnings
 
@@ -50,12 +51,9 @@ def get_sensor_data_from_api(use_real_api=True):
         response = requests.get(f"{API_BASE_URL}/api/sensor_data", timeout=5)
         if response.status_code == 200:
             data = response.json()
-            print(f"[DEBUG] 센서 데이터 가져옴: {len(data.get('temperature', []))}개 온도, {len(data.get('pressure', []))}개 압력, {len(data.get('vibration', []))}개 진동")
             return data
-        else:
-            print(f"[DEBUG] 센서 데이터 API 오류: {response.status_code}")
     except Exception as e:
-        print(f"[DEBUG] 센서 데이터 API 연결 오류: {e}")
+        pass
     return None
 
 def get_equipment_status_from_api(use_real_api=True):
@@ -67,12 +65,9 @@ def get_equipment_status_from_api(use_real_api=True):
         response = requests.get(f"{API_BASE_URL}/api/equipment_status", timeout=5)
         if response.status_code == 200:
             data = response.json()
-            print(f"[DEBUG] 설비 상태 데이터 가져옴: {len(data)}개")
             return data
-        else:
-            print(f"[DEBUG] 설비 상태 API 오류: {response.status_code}")
     except Exception as e:
-        print(f"[DEBUG] 설비 상태 API 연결 오류: {e}")
+        pass
     return []
 
 def get_alerts_from_api(use_real_api=True):
@@ -84,12 +79,9 @@ def get_alerts_from_api(use_real_api=True):
         response = requests.get(f"{API_BASE_URL}/api/alerts", timeout=5)
         if response.status_code == 200:
             data = response.json()
-            print(f"[DEBUG] 알림 데이터 가져옴: {len(data)}개")
             return data
-        else:
-            print(f"[DEBUG] 알림 데이터 API 오류: {response.status_code}")
     except Exception as e:
-        print(f"[DEBUG] 알림 데이터 API 연결 오류: {e}")
+        pass
     return []
 
 def get_quality_trend_from_api(use_real_api=True):
@@ -101,6 +93,84 @@ def get_quality_trend_from_api(use_real_api=True):
     except Exception as e:
         st.error(f"품질 추세 API 연결 오류: {e}")
     return None
+
+def get_ai_prediction_results(use_real_api=True):
+    """AI 예측 결과 JSON 파일들을 읽어오기"""
+    predictions = {}
+    
+    # API 연동이 OFF인 경우 더미 데이터 반환
+    if not use_real_api:
+        # 설비 이상 예측 더미 데이터 (85% 정상)
+        predictions['abnormal_detection'] = {
+            'status': 'success',
+            'prediction': {
+                'predicted_class': 'normal',
+                'predicted_class_description': '정상',
+                'confidence': 0.85,
+                'probabilities': {
+                    'normal': 0.85,
+                    'bearing_fault': 0.05,
+                    'roll_misalignment': 0.04,
+                    'motor_overload': 0.03,
+                    'lubricant_shortage': 0.03
+                },
+                'max_status': 'normal'
+            },
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        # 유압 이상 탐지 더미 데이터 (90% 정상)
+        predictions['hydraulic_detection'] = {
+            'status': 'success',
+            'prediction': {
+                'prediction': 0,  # 0: 정상, 1: 이상
+                'probabilities': {
+                    'normal': 0.90,
+                    'abnormal': 0.10
+                },
+                'confidence': 0.90
+            },
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        return predictions
+    
+    # API 연동이 ON인 경우 실제 JSON 파일 읽기
+    # 설비 이상 예측 결과 읽기
+    try:
+        abnormal_path = "ai_model/abnormal_detec/last_prediction.json"
+        if os.path.exists(abnormal_path):
+            with open(abnormal_path, 'r', encoding='utf-8') as f:
+                predictions['abnormal_detection'] = json.load(f)
+        else:
+            predictions['abnormal_detection'] = {
+                'status': 'error',
+                'error_message': '예측 결과 파일이 없습니다.'
+            }
+    except Exception as e:
+        predictions['abnormal_detection'] = {
+            'status': 'error',
+            'error_message': f'파일 읽기 오류: {str(e)}'
+        }
+    
+    # 유압 이상 탐지 결과 읽기
+    try:
+        hydraulic_path = "ai_model/hydraulic_rf/last_prediction.json"
+        if os.path.exists(hydraulic_path):
+            with open(hydraulic_path, 'r', encoding='utf-8') as f:
+                predictions['hydraulic_detection'] = json.load(f)
+        else:
+            predictions['hydraulic_detection'] = {
+                'status': 'error',
+                'error_message': '예측 결과 파일이 없습니다.'
+            }
+    except Exception as e:
+        predictions['hydraulic_detection'] = {
+            'status': 'error',
+            'error_message': f'파일 읽기 오류: {str(e)}'
+        }
+    
+    return predictions
 
 def has_critical_alerts(alerts):
     """위험 알림 감지 함수"""
@@ -123,7 +193,7 @@ def has_critical_alerts(alerts):
 
 def background_data_fetcher():
     """백그라운드에서 데이터를 가져오는 함수"""
-    print("[DEBUG] 백그라운드 데이터 페처 시작됨")
+
     
     # 전역 변수로 데이터 상태 관리
     global last_data_state
@@ -172,8 +242,7 @@ def background_data_fetcher():
                         'needs_refresh': True
                     })
                 else:
-                    print(f"[DEBUG] 데이터 변경 없음 - 센서: {has_sensor_data} ({current_sensor_count}), 알림: {current_alert_count}")
-                
+                    pass
             else:
                 print(f"API 응답 오류: {response.status_code}")
                 
@@ -1899,7 +1968,6 @@ def main():
         st.markdown('<hr style="margin:1.5rem 0 1rem 0; border: none; border-top: 1.5px solid #e2e8f0;" />', unsafe_allow_html=True)
         # 연동 토글 항상 하단에
         use_real_api = st.toggle("API 연동", value=st.session_state.get('api_toggle', False), help="실제 API에서 데이터를 받아옵니다.", key="api_toggle")
-        use_ai_model = st.toggle("AI 모델 연동", value=st.session_state.get('ai_toggle', False), help="AI 예측/진단 기능을 활성화합니다.", key="ai_toggle")
         
         # API 토글 상태 변경 감지 및 초기화 (토글 정의 후에 실행)
         if use_real_api != st.session_state.api_toggle_previous:
@@ -1943,23 +2011,9 @@ def main():
         
         # 새로고침 상태 표시
         if auto_refresh and refresh_interval != "수동":
-            st.info(f"🔄 {refresh_interval}마다 자동 새로고침 + 10초마다 실시간 감지")
-            st.write(f"마지막 새로고침: {st.session_state.last_refresh.strftime('%H:%M:%S')}")
+            st.info(f"🔄 {refresh_interval}마다 자동 새로고침")
         elif refresh_interval == "수동":
             st.info("🔄 수동 새로고침 모드")
-            st.write(f"마지막 새로고침: {st.session_state.last_refresh.strftime('%H:%M:%S')}")
-        
-        # 디버깅 정보 표시
-        st.markdown("---")
-        st.markdown("**디버깅 정보**")
-        st.write(f"API 토글 상태: {'ON' if use_real_api else 'OFF'}")
-        st.write(f"자동 새로고침: {'ON' if auto_refresh else 'OFF'}")
-        st.write(f"현재 시간: {datetime.now().strftime('%H:%M:%S')}")
-        
-        # 수동 새로고침 버튼
-        if st.button("🔄 수동 새로고침", key="manual_refresh"):
-            st.session_state.last_refresh = datetime.now()
-            st.rerun()
         
         # 데이터 제거 버튼
         if st.button("🗑️ 데이터 제거", help="기존 센서 데이터와 알림을 모두 삭제합니다."):
@@ -2073,22 +2127,89 @@ def main():
                 <div class="kpi-value" style="font-size:1.3rem;">{active_alerts}</div>
             </div>
             """, unsafe_allow_html=True)
+        # AI 예측 결과 가져오기
+        ai_predictions = get_ai_prediction_results(use_real_api)
+        
+        # AI 설비 이상 예측 카드
         with row2[1]:
-            st.markdown(f"""
-            <div class="kpi-card no-translate" translate="no" style="padding:0.5rem 0.4rem; min-height:70px; height:80px;">
-                <div class="kpi-label" style="font-size:0.9rem; margin-bottom:0.08rem;">AI 에너지 예측</div>
-                <div class="kpi-value" style="font-size:1.1rem; margin-bottom:0.08rem;">1,230 kWh</div>
-                <div class="kpi-change warning" style="font-size:0.8rem; margin:0.08rem 0 0 0;">평균 대비 +5%</div>
-            </div>
-            """, unsafe_allow_html=True)
+            if ai_predictions.get('abnormal_detection', {}).get('status') == 'success':
+                abnormal_data = ai_predictions['abnormal_detection']
+                prediction = abnormal_data['prediction']
+                probabilities = prediction['probabilities']
+                
+                # 가장 높은 확률을 가진 상태 찾기
+                max_prob = max(probabilities.values())
+                max_status = [k for k, v in probabilities.items() if v == max_prob][0]
+                
+                # 상태명 한글화
+                status_names = {
+                    'normal': '정상',
+                    'bearing_fault': '베어링 고장',
+                    'roll_misalignment': '롤 정렬 불량',
+                    'motor_overload': '모터 과부하',
+                    'lubricant_shortage': '윤활유 부족'
+                }
+                
+                # 카드 색상 결정
+                if max_status == 'normal':
+                    card_class = "success"
+                    change_class = "success"
+                elif max_status in ['bearing_fault', 'roll_misalignment']:
+                    card_class = "warning"
+                    change_class = "warning"
+                else:
+                    card_class = "danger"
+                    change_class = "danger"
+                
+                st.markdown(f"""
+                <div class="kpi-card {card_class} no-translate" translate="no" style="padding:0.5rem 0.4rem; min-height:70px; height:80px;">
+                    <div class="kpi-label" style="font-size:0.9rem; margin-bottom:0.08rem;">AI 설비 이상 예측</div>
+                    <div class="kpi-value" style="font-size:1.1rem; margin-bottom:0.08rem;">{status_names[max_status]}</div>
+                    <div class="kpi-change {change_class}" style="font-size:0.8rem; margin:0.08rem 0 0 0;">{max_prob:.1%}</div>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                <div class="kpi-card no-translate" translate="no" style="padding:0.5rem 0.4rem; min-height:70px; height:80px;">
+                    <div class="kpi-label" style="font-size:0.9rem; margin-bottom:0.08rem;">AI 설비 이상 예측</div>
+                    <div class="kpi-value" style="font-size:1.1rem; margin-bottom:0.08rem;">예측 없음</div>
+                    <div class="kpi-change" style="font-size:0.8rem; margin:0.08rem 0 0 0;">데이터 없음</div>
+                </div>
+                """, unsafe_allow_html=True)
+        
+        # AI 유압 이상 탐지 카드
         with row2[2]:
-            st.markdown(f"""
-            <div class="kpi-card danger no-translate" translate="no" style="padding:0.5rem 0.4rem; min-height:70px; height:80px;">
-                <div class="kpi-label" style="font-size:0.9rem; margin-bottom:0.08rem;">AI 설비 이상</div>
-                <div class="kpi-value" style="font-size:1.1rem; margin-bottom:0.08rem;">프레스기 #003</div>
-                <div class="kpi-change danger" style="font-size:0.8rem; margin:0.08rem 0 0 0;">진동 이상 감지</div>
-            </div>
-            """, unsafe_allow_html=True)
+            if ai_predictions.get('hydraulic_detection', {}).get('status') == 'success':
+                hydraulic_data = ai_predictions['hydraulic_detection']
+                prediction = hydraulic_data['prediction']
+                
+                # 상태 결정
+                if prediction['prediction'] == 0:
+                    status_text = '정상'
+                    card_class = "success"
+                    change_class = "success"
+                else:
+                    status_text = '이상 감지'
+                    card_class = "danger"
+                    change_class = "danger"
+                
+                confidence = prediction['confidence']
+                
+                st.markdown(f"""
+                <div class="kpi-card {card_class} no-translate" translate="no" style="padding:0.5rem 0.4rem; min-height:70px; height:80px;">
+                    <div class="kpi-label" style="font-size:0.9rem; margin-bottom:0.08rem;">AI 유압 이상 탐지</div>
+                    <div class="kpi-value" style="font-size:1.1rem; margin-bottom:0.08rem;">{status_text}</div>
+                    <div class="kpi-change {change_class}" style="font-size:0.8rem; margin:0.08rem 0 0 0;">신뢰도 {confidence:.1%}</div>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                <div class="kpi-card no-translate" translate="no" style="padding:0.5rem 0.4rem; min-height:70px; height:80px;">
+                    <div class="kpi-label" style="font-size:0.9rem; margin-bottom:0.08rem;">AI 유압 이상 탐지</div>
+                    <div class="kpi-value" style="font-size:1.1rem; margin-bottom:0.08rem;">예측 없음</div>
+                    <div class="kpi-change" style="font-size:0.8rem; margin:0.08rem 0 0 0;">데이터 없음</div>
+                </div>
+                """, unsafe_allow_html=True)
         # 6개 정보 3,3으로 2행 배치 (상단: 설비 상태, 실시간 센서, 품질/생산 트렌드 / 하단: 업무 알림, AI 에너지 예측, AI 설비 이상 감지)
         row_top = st.columns(3, gap="small")
         row_bottom = st.columns(3, gap="small")
@@ -2176,16 +2297,87 @@ def main():
             if st.session_state.alert_container is None:
                 st.session_state.alert_container = st.empty()
             update_alert_container(use_real_api)
-        # 5. AI 에너지 예측 (카드 없이 제목+그래프만, 그래프 height 확대)
+        # 5. AI 설비 이상 예측
         with row_bottom[1]:
-            st.markdown('<div class="chart-title no-translate" translate="no" style="font-size:1rem; margin-bottom:0.4rem;">AI 에너지 소비 예측</div>', unsafe_allow_html=True)
-            sensor_data = generate_sensor_data()
-            st.line_chart(sensor_data['temperature'] + 10 * np.random.rand(len(sensor_data)), height=200)
-        # 6. AI 설비 이상 감지 (카드 없이 제목+그래프만, 그래프 height 확대)
+            st.subheader("AI 설비 이상 예측")
+            
+            ai_predictions = get_ai_prediction_results(use_real_api)
+            
+            if ai_predictions.get('abnormal_detection', {}).get('status') == 'success':
+                abnormal_data = ai_predictions['abnormal_detection']
+                prediction = abnormal_data['prediction']
+                probabilities = prediction['probabilities']
+                
+                # 가장 높은 확률을 가진 상태 찾기
+                max_prob = max(probabilities.values())
+                max_status = [k for k, v in probabilities.items() if v == max_prob][0]
+                
+                # 상태명 한글화
+                status_names = {
+                    'normal': '정상',
+                    'bearing_fault': '베어링 고장',
+                    'roll_misalignment': '롤 정렬 불량',
+                    'motor_overload': '모터 과부하',
+                    'lubricant_shortage': '윤활유 부족'
+                }
+                
+                # 메인 상태 표시
+                if max_status == 'normal':
+                    st.success(f"🟢 {status_names[max_status]} ({max_prob:.1%})")
+                elif max_status in ['bearing_fault', 'roll_misalignment']:
+                    st.warning(f"🟠 {status_names[max_status]} ({max_prob:.1%})")
+                else:
+                    st.error(f"🔴 {status_names[max_status]} ({max_prob:.1%})")
+                
+                # 확률들 표시
+                st.write("**상세 확률:**")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.write(f"• 정상: {probabilities['normal']:.1%}")
+                    st.write(f"• 베어링 고장: {probabilities['bearing_fault']:.1%}")
+                    st.write(f"• 롤 정렬 불량: {probabilities['roll_misalignment']:.1%}")
+                with col2:
+                    st.write(f"• 모터 과부하: {probabilities['motor_overload']:.1%}")
+                    st.write(f"• 윤활유 부족: {probabilities['lubricant_shortage']:.1%}")
+            else:
+                st.info("예측 결과 없음")
+        
+        # 6. AI 유압 이상 탐지
         with row_bottom[2]:
-            st.markdown('<div class="chart-title no-translate" translate="no" style="font-size:1rem; margin-bottom:0.4rem;">AI 설비 이상 감지</div>', unsafe_allow_html=True)
-            sensor_data = generate_sensor_data()
-            st.line_chart(sensor_data['vibration'] + 0.2 * (np.arange(len(sensor_data)) > len(sensor_data) * 0.7), height=200)
+            st.subheader("AI 유압 이상 탐지")
+            
+            ai_predictions = get_ai_prediction_results(use_real_api)
+            
+            if ai_predictions.get('hydraulic_detection', {}).get('status') == 'success':
+                hydraulic_data = ai_predictions['hydraulic_detection']
+                prediction = hydraulic_data['prediction']
+                
+                # 상태 결정
+                if prediction['prediction'] == 0:
+                    status_text = '정상'
+                else:
+                    status_text = '이상 감지'
+                
+                prediction_time = datetime.fromisoformat(hydraulic_data['timestamp']).strftime('%H:%M:%S')
+                
+                # 메인 상태 표시
+                if prediction['prediction'] == 0:
+                    st.success(f"🟢 {status_text} ({prediction['probabilities']['normal']:.1%})")
+                else:
+                    st.error(f"🔴 {status_text} ({prediction['probabilities']['abnormal']:.1%})")
+                
+                # 상세 정보 표시
+                st.write("**상세 정보:**")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.write(f"• 정상 확률: {prediction['probabilities']['normal']:.1%}")
+                    st.write(f"• 이상 확률: {prediction['probabilities']['abnormal']:.1%}")
+                with col2:
+                    st.write(f"• 신뢰도: {prediction['confidence']:.1%}")
+                    st.write(f"• 예측 시간: {prediction_time}")
+            else:
+                st.info("예측 결과 없음")
+
 
     with tabs[1]:  # 설비 관리
         st.markdown('<div class="main-header no-translate" translate="no">🏭 설비 관리</div>', unsafe_allow_html=True)
