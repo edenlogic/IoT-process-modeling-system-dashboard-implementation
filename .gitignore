@@ -8,3 +8,6 @@ __pycache__/
 *.pyo
 *.pyd
 .Python
+api2_server.py
+new_api_server.py
+

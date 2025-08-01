@@ -2,15 +2,44 @@ import os
 import sqlite3
 from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime, timedelta
 import uvicorn
+import hashlib
+import uuid
+from dataclasses import dataclass, field
+import logging
+import re
+
+# dotenv 추가
+from dotenv import load_dotenv
+load_dotenv()
+
+# 로거 설정 추가
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 DB_PATH = 'posco_iot.db'
 DDL_PATH = 'posco_iot_DDL.sql'
 
+# 환경변수 설정 추가
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://localhost:8000")
+COOLDOWN_PERIODS = {
+    'error': timedelta(seconds=int(os.getenv("ERROR_COOLDOWN_SECONDS", "30"))),
+    'warning': timedelta(seconds=int(os.getenv("WARNING_COOLDOWN_SECONDS", "60"))),
+    'info': timedelta(seconds=int(os.getenv("INFO_COOLDOWN_SECONDS", "120")))
+}
+
 app = FastAPI(title="POSCO MOBILITY IoT API", version="1.0.0")
+
+# 전역 변수 추가
+action_history = []
+alert_history = {}
+recent_raw_alerts = []
+action_tokens = {}
+alert_status_memory = {}
 
 # CORS 설정 (모든 Origin 허용)
 app.add_middleware(
@@ -36,6 +65,7 @@ class AlertData(BaseModel):
     severity: str
     timestamp: Optional[str] = None
     message: Optional[str] = None
+    action_link: Optional[str] = None  # 추가
 
 class EquipmentStatus(BaseModel):
     id: str
@@ -44,6 +74,99 @@ class EquipmentStatus(BaseModel):
     efficiency: float
     type: str
     last_maintenance: str
+
+@dataclass
+class AlertHistory:
+    """알림 이력 관리 (중복 방지용)"""
+    alert_hash: str
+    equipment: str
+    sensor_type: str
+    severity: str
+    first_occurrence: datetime
+    last_occurrence: datetime
+    occurrence_count: int = 1
+    values: List[float] = field(default_factory=list)
+    is_active: bool = True
+    last_notification_time: Optional[datetime] = None
+
+# 유틸리티 함수들
+def normalize_timestamp(timestamp: str) -> str:
+    """타임스탬프를 초 단위까지만 잘라서 정규화"""
+    match = re.match(r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})', timestamp)
+    if match:
+        return match.group(1)
+    return timestamp
+
+def generate_action_link(alert_data: dict) -> str:
+    """알림 처리용 고유 링크 생성"""
+    token = str(uuid.uuid4())
+    
+    action_tokens[token] = {
+        "alert_data": alert_data,
+        "created_at": datetime.now(),
+        "processed": False,
+        "expires_at": datetime.now() + timedelta(hours=24)
+    }
+    
+    return f"{PUBLIC_BASE_URL}/action/{token}"
+
+def check_duplicate_alert(alert_data: Dict) -> Tuple[bool, str]:
+    """알림 중복 체크 - True면 중복(스킵), False면 신규(발송)"""
+    unique_string = f"{alert_data['equipment']}:{alert_data['sensor_type']}:{alert_data['severity']}"
+    hash_key = hashlib.md5(unique_string.encode()).hexdigest()
+    
+    if hash_key not in alert_history:
+        alert_history[hash_key] = AlertHistory(
+            alert_hash=hash_key,
+            equipment=alert_data['equipment'],
+            sensor_type=alert_data['sensor_type'],
+            severity=alert_data['severity'],
+            first_occurrence=datetime.now(),
+            last_occurrence=datetime.now(),
+            occurrence_count=1,
+            values=[alert_data['value']],
+            is_active=True,
+            last_notification_time=datetime.now()
+        )
+        return False, "새로운 알림 타입"
+    
+    history = alert_history[hash_key]
+    now = datetime.now()
+    
+    # 직전 값과 동일한지 체크
+    if history.values and len(history.values) > 0:
+        last_value = history.values[-1]
+        if abs(alert_data['value'] - last_value) < 0.01:
+            time_since_last = now - history.last_occurrence
+            if time_since_last < timedelta(seconds=5):
+                history.last_occurrence = now
+                return True, f"동일한 값 반복 (값: {alert_data['value']})"
+    
+    # 쿨다운 체크
+    if history.last_notification_time:
+        cooldown = COOLDOWN_PERIODS.get(alert_data['severity'], timedelta(seconds=30))
+        if now - history.last_notification_time < cooldown:
+            remaining = int((history.last_notification_time + cooldown - now).total_seconds())
+            return True, f"쿨다운 중 (남은시간: {remaining}초)"
+    
+    # 값 변화율 체크
+    if history.values and len(history.values) > 1:
+        last_value = history.values[-1]
+        if last_value != 0:
+            change_rate = abs(alert_data['value'] - last_value) / abs(last_value)
+            if change_rate < 0.05:
+                return True, f"변화율 미달 ({change_rate*100:.1f}% < 5%)"
+    
+    history.last_occurrence = now
+    history.occurrence_count += 1
+    history.values.append(alert_data['value'])
+    history.last_notification_time = now
+    history.is_active = True
+    
+    if len(history.values) > 20:
+        history.values = history.values[-20:]
+        
+    return False, f"새로운 알림 (값: {alert_data['value']})"
 
 # DB 초기화 함수 (DDL 적용 및 장비 초기 데이터 삽입)
 def init_db():
@@ -85,6 +208,14 @@ def init_db():
 @app.on_event("startup")
 def startup():
     init_db()
+    # 환경변수 확인 로그 추가
+    logger.info("="*50)
+    logger.info("환경변수 설정 확인:")
+    logger.info(f"PUBLIC_BASE_URL: {PUBLIC_BASE_URL}")
+    logger.info(f"ERROR_COOLDOWN: {COOLDOWN_PERIODS['error'].seconds}초")
+    logger.info(f"WARNING_COOLDOWN: {COOLDOWN_PERIODS['warning'].seconds}초")
+    logger.info(f"INFO_COOLDOWN: {COOLDOWN_PERIODS['info'].seconds}초")
+    logger.info("="*50)
 
 # 센서 데이터 조회 (시뮬레이터/대시보드)
 @app.get("/sensors", response_model=List[SensorData])
@@ -121,7 +252,7 @@ def post_sensor(data: SensorData):
     conn.close()
     return {"status": "ok", "message": "센서 데이터가 저장되었습니다."}
 
-# 알림 데이터 조회 (대시보드/시뮬레이터)
+# 알림 데이터 조회 (대시보드/시뮬레이터) - 수정됨
 @app.get("/alerts", response_model=List[AlertData])
 def get_alerts(equipment: Optional[str] = None, severity: Optional[str] = None, status: Optional[str] = None, limit: int = 50):
     conn = sqlite3.connect(DB_PATH)
@@ -135,9 +266,6 @@ def get_alerts(equipment: Optional[str] = None, severity: Optional[str] = None, 
     if severity:
         conditions.append("severity = ?")
         params.append(severity)
-    if status:
-        conditions.append("status = ?")
-        params.append(status)
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
     query += " ORDER BY timestamp DESC LIMIT ?"
@@ -145,23 +273,61 @@ def get_alerts(equipment: Optional[str] = None, severity: Optional[str] = None, 
     c.execute(query, params)
     rows = c.fetchall()
     conn.close()
-    return [AlertData(
-        equipment=row[0], sensor_type=row[1], value=row[2], threshold=row[3],
-        severity=row[4], timestamp=row[5], message=row[6]
-    ) for row in rows]
+    
+    results = []
+    for row in rows:
+        alert_dict = {
+            "equipment": row[0], 
+            "sensor_type": row[1], 
+            "value": row[2], 
+            "threshold": row[3],
+            "severity": row[4], 
+            "timestamp": row[5], 
+            "message": row[6]
+        }
+        
+        # 웹 링크 생성 (error severity만)
+        if row[4] == 'error':
+            alert_dict["action_link"] = generate_action_link(alert_dict)
+            
+        results.append(AlertData(**alert_dict))
+            
+    return results
 
-# 알림 데이터 저장 (시뮬레이터/AI)
+# 알림 데이터 저장 (시뮬레이터/AI) - 수정됨
 @app.post("/alerts")
 def post_alert(data: AlertData):
+    logger.info(f"[알람 수신] equipment={data.equipment}, sensor={data.sensor_type}, "
+                f"severity={data.severity}, value={data.value}, threshold={data.threshold}")
+    
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     timestamp = data.timestamp or datetime.now().isoformat()
+    normalized_timestamp = normalize_timestamp(timestamp)
+    
+    # 중복 체크
+    alert_dict = data.dict()
+    alert_dict['timestamp'] = normalized_timestamp
+    
+    is_duplicate, reason = check_duplicate_alert(alert_dict)
+    if is_duplicate:
+        logger.info(f"알림 스킵: {data.equipment}/{data.sensor_type} - {reason}")
+        conn.close()
+        return {"status": "filtered", "message": f"알림 필터링됨: {reason}", "timestamp": normalized_timestamp}
+    
+    logger.info(f"[알람 저장] DB에 저장: {data.equipment}/{data.sensor_type} severity={data.severity}")
+    
     c.execute('''INSERT INTO alerts (equipment, sensor_type, value, threshold, severity, timestamp, message) \
         VALUES (?, ?, ?, ?, ?, ?, ?)''',
-        (data.equipment, data.sensor_type, data.value, data.threshold, data.severity, timestamp, data.message))
+        (data.equipment, data.sensor_type, data.value, data.threshold, data.severity, normalized_timestamp, data.message))
     conn.commit()
     conn.close()
-    return {"status": "ok", "message": "알림이 저장되었습니다."}
+    
+    # 메모리에 status 저장
+    alert_key = f"{data.equipment}_{data.sensor_type}_{normalized_timestamp}"
+    alert_status_memory[alert_key] = "미처리"
+    
+    return {"status": "ok", "message": "알림이 저장되었습니다.", "timestamp": normalized_timestamp}
 
 # 알림 상태 업데이트 (처리/미처리 등)
 @app.put("/alerts/{alert_id}/status")
@@ -392,7 +558,7 @@ def post_production_kpi(data: dict):
     finally:
         conn.close()
 
-# 데이터베이스 초기화 (기존 데이터 삭제)
+# 데이터베이스 초기화 (기존 데이터 삭제) - 수정됨
 @app.post("/clear_data")
 def clear_data():
     conn = sqlite3.connect(DB_PATH)
@@ -460,6 +626,14 @@ def clear_data():
         c.execute('SELECT COUNT(*) FROM equipment_status')
         equipment_count = c.fetchone()[0]
         print(f"[API] 최종 설비 개수 확인: {equipment_count}개")
+        
+        # 메모리 기반 데이터도 초기화
+        global action_history, alert_history, recent_raw_alerts, action_tokens, alert_status_memory
+        action_history = []
+        alert_history = {}
+        recent_raw_alerts = []
+        action_tokens = {}
+        alert_status_memory = {}
         
         return {"status": "ok", "message": "데이터베이스가 초기화되었습니다. 시뮬레이터를 시작하면 실제 데이터가 들어옵니다."}
     except Exception as e:
@@ -621,6 +795,348 @@ async def get_dashboard_status():
             "timestamp": datetime.now().isoformat()
         }
 
+# 웹 링크 처리 엔드포인트들 추가
+@app.get("/action/{token}")
+async def show_action_page(token: str):
+    """처리 페이지 표시"""
+    
+    token_data = action_tokens.get(token)
+    if not token_data:
+        return HTMLResponse("""
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>처리 오류</title>
+        </head>
+        <body style="font-family: Arial; padding: 20px; text-align: center;">
+            <h2>❌ 유효하지 않은 링크입니다</h2>
+            <p>링크가 만료되었거나 잘못된 접근입니다.</p>
+        </body>
+        </html>
+        """)
+    
+    if datetime.now() > token_data["expires_at"]:
+        del action_tokens[token]
+        return HTMLResponse("""
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>링크 만료</title>
+        </head>
+        <body style="font-family: Arial; padding: 20px; text-align: center;">
+            <h2>⏰ 링크가 만료되었습니다</h2>
+            <p>24시간이 경과하여 처리할 수 없습니다.</p>
+        </body>
+        </html>
+        """)
+    
+    if token_data["processed"]:
+        return HTMLResponse("""
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>처리 완료</title>
+        </head>
+        <body style="font-family: Arial; padding: 20px; text-align: center;">
+            <h2>✅ 이미 처리되었습니다</h2>
+            <p>이 알림은 이미 처리 완료되었습니다.</p>
+        </body>
+        </html>
+        """)
+    
+    alert = token_data["alert_data"]
+    sensor_map = {
+        'temperature': '온도',
+        'pressure': '압력',
+        'vibration': '진동',
+        'power': '전력'
+    }
+    sensor_ko = sensor_map.get(alert['sensor_type'], alert['sensor_type'])
+    
+    html_content = f"""
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>알림 처리</title>
+        <style>
+            body {{
+                font-family: Arial, sans-serif;
+                padding: 20px;
+                max-width: 400px;
+                margin: 0 auto;
+                background-color: #f5f5f5;
+            }}
+            .container {{
+                background: white;
+                padding: 20px;
+                border-radius: 10px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            }}
+            h2 {{
+                color: #333;
+                margin-bottom: 20px;
+            }}
+            .alert-info {{
+                background: #f0f0f0;
+                padding: 15px;
+                border-radius: 5px;
+                margin-bottom: 20px;
+            }}
+            .info-row {{
+                margin: 5px 0;
+            }}
+            .label {{
+                font-weight: bold;
+                color: #666;
+            }}
+            .value {{
+                color: #333;
+            }}
+            .severity-error {{
+                color: #d32f2f;
+                font-weight: bold;
+            }}
+            .btn {{
+                display: block;
+                width: 100%;
+                padding: 15px;
+                margin: 10px 0;
+                font-size: 18px;
+                font-weight: bold;
+                text-align: center;
+                text-decoration: none;
+                border-radius: 5px;
+                cursor: pointer;
+                border: none;
+            }}
+            .btn-interlock {{
+                background: #d32f2f;
+                color: white;
+            }}
+            .btn-bypass {{
+                background: #10b981;
+                color: white;
+            }}
+            .btn:hover {{
+                opacity: 0.9;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h2>🚨 설비 알림 처리</h2>
+            
+            <div class="alert-info">
+                <div class="info-row">
+                    <span class="label">설비:</span>
+                    <span class="value">{alert['equipment']}</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">센서:</span>
+                    <span class="value">{sensor_ko}</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">측정값:</span>
+                    <span class="value">{alert['value']:.1f}</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">임계값:</span>
+                    <span class="value">{alert['threshold']:.1f}</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">심각도:</span>
+                    <span class="value severity-{alert['severity']}">{alert['severity'].upper()}</span>
+                </div>
+            </div>
+            
+            <div class="actions">
+                <h3>처리 방법을 선택하세요:</h3>
+                <a href="/action/{token}/process?action=interlock" class="btn btn-interlock">
+                    1. 인터락 (설비 정지)
+                </a>
+                <a href="/action/{token}/process?action=bypass" class="btn btn-bypass">
+                    2. 바이패스 (계속 운전)
+                </a>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    
+    return HTMLResponse(html_content)
+
+@app.get("/action/{token}/process")
+async def process_action(token: str, action: str):
+    """실제 처리 실행"""
+    
+    token_data = action_tokens.get(token)
+    if not token_data or token_data["processed"]:
+        return HTMLResponse("""
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>처리 오류</title>
+        </head>
+        <body style="font-family: Arial; padding: 20px; text-align: center;">
+            <h2>❌ 처리할 수 없습니다</h2>
+            <p>유효하지 않거나 이미 처리된 요청입니다.</p>
+        </body>
+        </html>
+        """)
+    
+    alert = token_data["alert_data"]
+    
+    if action == "interlock":
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute('UPDATE equipment_status SET status = ?, efficiency = ? WHERE id = ?', 
+                 ("정지", 0.0, alert['equipment']))
+        conn.commit()
+        conn.close()
+        
+        action_type = "interlock"
+        action_text = "인터락"
+        result_emoji = "🔴"
+        result_text = "설비가 정지되었습니다"
+    elif action == "bypass":
+        action_type = "bypass"
+        action_text = "바이패스"
+        result_emoji = "🟢"
+        result_text = "설비가 계속 운전됩니다"
+    else:
+        return HTMLResponse("잘못된 액션입니다")
+    
+    # 조치 이력 저장
+    action_record = {
+        "action_id": f"action_{len(action_history) + 1}",
+        "alert_id": f"{alert['equipment']}_{alert['sensor_type']}_{alert['timestamp']}",
+        "equipment": alert['equipment'],
+        "sensor_type": alert['sensor_type'],
+        "action_type": action_type,
+        "action_time": datetime.now().isoformat(),
+        "assigned_to": "web_link",
+        "value": alert['value'],
+        "threshold": alert['threshold'],
+        "severity": alert['severity'],
+        "status": "completed",
+        "message": f"웹 링크로 {action_text} 처리됨"
+    }
+    action_history.append(action_record)
+    
+    token_data["processed"] = True
+    token_data["processed_at"] = datetime.now()
+    token_data["action"] = action_type
+    
+    logger.info(f"✅ 웹 링크 처리 완료: {alert['equipment']} → {action_text}")
+    
+    html_content = f"""
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>처리 완료</title>
+        <style>
+            body {{
+                font-family: Arial, sans-serif;
+                padding: 20px;
+                max-width: 400px;
+                margin: 0 auto;
+                background-color: #f5f5f5;
+            }}
+            .container {{
+                background: white;
+                padding: 30px;
+                border-radius: 10px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                text-align: center;
+            }}
+            .result-emoji {{
+                font-size: 60px;
+                margin-bottom: 20px;
+            }}
+            h2 {{
+                color: #333;
+                margin-bottom: 10px;
+            }}
+            .result-text {{
+                color: #666;
+                font-size: 18px;
+                margin-bottom: 30px;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="result-emoji">{result_emoji}</div>
+            <h2>처리 완료</h2>
+            <p class="result-text">{result_text}</p>
+            <p style="color: #666;">이 창은 닫으셔도 됩니다.</p>
+        </div>
+    </body>
+    </html>
+    """
+    
+    return HTMLResponse(html_content)
+
+# 조치 이력 관련 엔드포인트들
+@app.get("/action_history")
+def get_action_history(limit: int = 20):
+    """인터락/바이패스 조치 이력 조회"""
+    sorted_history = sorted(action_history, key=lambda x: x['action_time'], reverse=True)
+    return sorted_history[:limit]
+
+@app.get("/action_stats")
+def get_action_stats():
+    """조치 통계"""
+    interlock_count = sum(1 for a in action_history if a['action_type'] == 'interlock')
+    bypass_count = sum(1 for a in action_history if a['action_type'] == 'bypass')
+    
+    equipment_stats = {}
+    for action in action_history:
+        eq = action['equipment']
+        if eq not in equipment_stats:
+            equipment_stats[eq] = {'interlock': 0, 'bypass': 0}
+        equipment_stats[eq][action['action_type']] += 1
+    
+    method_stats = {'sms': 0, 'web_link': 0}
+    for action in action_history:
+        if action.get('assigned_to', '').startswith('sms_'):
+            method_stats['sms'] += 1
+        elif action.get('assigned_to') == 'web_link':
+            method_stats['web_link'] += 1
+    
+    return {
+        "total_actions": len(action_history),
+        "interlock_count": interlock_count,
+        "bypass_count": bypass_count,
+        "equipment_stats": equipment_stats,
+        "method_stats": method_stats,
+        "last_action": action_history[-1] if action_history else None
+    }
+
+@app.get("/link_stats")
+def get_link_stats():
+    """웹 링크 처리 통계"""
+    active_links = sum(1 for t in action_tokens.values() if not t["processed"])
+    processed_links = sum(1 for t in action_tokens.values() if t["processed"])
+    
+    action_stats = {"interlock": 0, "bypass": 0}
+    for token_data in action_tokens.values():
+        if token_data.get("processed") and token_data.get("action"):
+            action_stats[token_data["action"]] = action_stats.get(token_data["action"], 0) + 1
+    
+    return {
+        "total_links": len(action_tokens),
+        "active_links": active_links,
+        "processed_links": processed_links,
+        "action_stats": action_stats,
+        "timestamp": datetime.now().isoformat()
+    }
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
