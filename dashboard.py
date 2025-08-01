@@ -99,13 +99,42 @@ def get_quality_trend_from_api(use_real_api=True):
         st.error(f"품질 추세 API 연결 오류: {e}")
     return None
 
+def get_color_and_icon_for_probability(status, probability):
+    """
+    확률값에 따라 색상과 아이콘을 동적으로 결정하는 함수
+    
+    Args:
+        status (str): 상태 타입 ('normal' 또는 이상 타입)
+        probability (float): 확률값 (0.0 ~ 1.0)
+    
+    Returns:
+        dict: 색상, 배경색, 아이콘 정보
+    """
+    # 정상 상태의 경우: 높은 확률이 좋음 (녹색), 낮은 확률이 나쁨 (빨간색)
+    if status == 'normal':
+        if probability >= 0.8:  # 80% 이상
+            return {'color': '#10B981', 'bg': '#ECFDF5', 'icon': '🟢'}
+        elif probability >= 0.5:  # 50% 이상 80% 미만
+            return {'color': '#F59E0B', 'bg': '#FFFBEB', 'icon': '🟠'}
+        else:  # 50% 미만
+            return {'color': '#EF4444', 'bg': '#FEF2F2', 'icon': '🔴'}
+    
+    # 이상 상태의 경우: 낮은 확률이 좋음 (녹색), 높은 확률이 나쁨 (빨간색)
+    else:
+        if probability < 0.3:  # 30% 미만
+            return {'color': '#10B981', 'bg': '#ECFDF5', 'icon': '🟢'}
+        elif probability < 0.6:  # 30% 이상 60% 미만
+            return {'color': '#F59E0B', 'bg': '#FFFBEB', 'icon': '🟠'}
+        else:  # 60% 이상
+            return {'color': '#EF4444', 'bg': '#FEF2F2', 'icon': '🔴'}
+
 def get_ai_prediction_results(use_real_api=True):
     """AI 예측 결과 JSON 파일들을 읽어오기"""
     predictions = {}
     
-    # API 연동이 OFF인 경우 더미 데이터 반환
+        # API 연동이 OFF인 경우 더미 데이터 반환
     if not use_real_api:
-        # 설비 이상 예측 더미 데이터 (85% 정상)
+        # 설비 이상 예측 더미 데이터 (77.1% 정상 - 주의 상태)
         predictions['abnormal_detection'] = {
             'status': 'success',
             'prediction': {
@@ -113,11 +142,11 @@ def get_ai_prediction_results(use_real_api=True):
                 'predicted_class_description': '정상',
                 'confidence': 0.85,
                 'probabilities': {
-                    'normal': 0.85,
-                    'bearing_fault': 0.05,
-                    'roll_misalignment': 0.04,
-                    'motor_overload': 0.03,
-                    'lubricant_shortage': 0.03
+                    'normal': 0.771,
+                    'bearing_fault': 0.089,
+                    'roll_misalignment': 0.067,
+                    'motor_overload': 0.045,
+                    'lubricant_shortage': 0.028
                 },
                 'max_status': 'normal'
             },
@@ -1912,9 +1941,9 @@ def main():
     # ----------- 사이드바(필터, AI 연동, 새로고침) 복원 -----------
     with st.sidebar:
         st.markdown('<div style="font-size:18px; font-weight:bold; margin-bottom:0.5rem; margin-top:0.5rem;">필터 설정</div>', unsafe_allow_html=True)
-        st.markdown('<div style="font-size:13px; color:#64748b; margin-bottom:0.2rem; margin-top:0.7rem;">공정 선택</div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-size:13px; color:#64748b; margin-bottom:0.1rem; margin-top:0.3rem;">공정 선택</div>', unsafe_allow_html=True)
         process = st.selectbox("공정 선택", ["전체 공정", "프레스 공정", "용접 공정", "조립 공정", "검사 공정"], label_visibility="collapsed")
-        st.markdown('<div style="font-size:13px; color:#64748b; margin-bottom:0.2rem; margin-top:0.7rem;">설비 필터</div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-size:13px; color:#64748b; margin-bottom:0.1rem; margin-top:0.3rem;">설비 필터</div>', unsafe_allow_html=True)
         
         # 설비 필터 스타일링
         st.markdown("""
@@ -1926,7 +1955,11 @@ def main():
             padding-right: 8px !important;
         }
         /* 설비 필터 컨테이너 내부 초기화 버튼(x) 완전히 숨기기 */
-        div[data-testid="stMultiSelect"] button[aria-label="Clear all"] {
+        div[data-testid="stMultiSelect"] button,
+        div[data-testid="stMultiSelect"] button[aria-label="Clear all"],
+        div[data-testid="stMultiSelect"] button[title="Clear all"],
+        div[data-testid="stMultiSelect"] button[data-baseweb="button"],
+        div[data-testid="stMultiSelect"] div[role="button"] {
             display: none !important;
         }
         /* 설비 필터 컨테이너 내부 화살표 완전히 숨기기 */
@@ -1998,9 +2031,9 @@ def main():
                     break
         st.markdown('<hr style="margin:1.5rem 0 1rem 0; border: none; border-top: 1.5px solid #e2e8f0;" />', unsafe_allow_html=True)
         st.markdown('<div style="font-size:18px; font-weight:bold; margin-bottom:0.5rem; margin-top:0.5rem;">날짜 선택</div>', unsafe_allow_html=True)
-        st.markdown('<div style="font-size:13px; color:#64748b; margin-bottom:0.2rem; margin-top:0.7rem;">일자 선택</div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-size:13px; color:#64748b; margin-bottom:0.1rem; margin-top:0.3rem;">일자 선택</div>', unsafe_allow_html=True)
         selected_date = st.date_input("일자 선택", datetime.now().date(), label_visibility="collapsed")
-        st.markdown('<div style="font-size:13px; color:#64748b; margin-bottom:0.2rem; margin-top:0.7rem;">기간 선택</div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-size:13px; color:#64748b; margin-bottom:0.1rem; margin-top:0.3rem;">기간 선택</div>', unsafe_allow_html=True)
         date_range = st.date_input(
             "기간 선택",
             value=(datetime.now().date() - timedelta(days=7), datetime.now().date()),
@@ -2341,23 +2374,10 @@ def main():
                     'lubricant_shortage': '윤활유 부족'
                 }
                 
-                # 정상 확률에 따른 색상 결정
+                # 정상 확률에 따른 메인 상태 색상 결정
                 normal_prob = probabilities.get('normal', 0)
-                if normal_prob >= 0.8:  # 80% 이상
-                    main_status_config = {'color': '#10B981', 'bg': '#ECFDF5', 'icon': '🟢', 'text': '정상'}
-                elif normal_prob >= 0.5:  # 50% 이상 80% 미만
-                    main_status_config = {'color': '#F59E0B', 'bg': '#FFFBEB', 'icon': '🟠', 'text': '주의'}
-                else:  # 50% 미만
-                    main_status_config = {'color': '#EF4444', 'bg': '#FEF2F2', 'icon': '🔴', 'text': '위험'}
-                
-                # 상태별 색상 및 아이콘 (상세 분석용)
-                status_config = {
-                    'normal': {'color': '#10B981', 'bg': '#ECFDF5', 'icon': '🟢'},
-                    'bearing_fault': {'color': '#F59E0B', 'bg': '#FFFBEB', 'icon': '🟠'},
-                    'roll_misalignment': {'color': '#F59E0B', 'bg': '#FFFBEB', 'icon': '🟠'},
-                    'motor_overload': {'color': '#EF4444', 'bg': '#FEF2F2', 'icon': '🔴'},
-                    'lubricant_shortage': {'color': '#EF4444', 'bg': '#FEF2F2', 'icon': '🔴'}
-                }
+                main_status_config = get_color_and_icon_for_probability('normal', normal_prob)
+                main_status_config['text'] = '정상' if normal_prob >= 0.8 else '주의' if normal_prob >= 0.5 else '위험'
                 
                 config = main_status_config
                 
@@ -2377,8 +2397,10 @@ def main():
                 # 상세 분석 (프로그레스 바) - 하나의 컨테이너에 모든 내용 포함
                 progress_bars_html = ""
                 for status, prob in probabilities.items():
-                    status_color = status_config[status]['color']
-                    status_icon = status_config[status]['icon']
+                    # 동적 색상 및 아이콘 결정
+                    dynamic_config = get_color_and_icon_for_probability(status, prob)
+                    status_color = dynamic_config['color']
+                    status_icon = dynamic_config['icon']
                     display_prob = max(prob * 100, 5)  # 최소 5%로 표시, 확률을 0-100 스케일로 변환
                     
                     progress_bars_html += f'<div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.3rem; padding: 0.2rem 0;"><span style="font-size: 0.65rem;">{status_icon}</span><span style="font-size: 0.7rem; font-weight: 500; min-width: 75px; color: #374151;">{status_names[status]}</span><div style="flex: 1; background: #f3f4f6; border-radius: 3px; height: 5px; overflow: hidden;"><div style="background: {status_color}; height: 100%; width: {display_prob:.1f}%; border-radius: 3px; transition: width 0.3s ease;"></div></div><span style="font-size: 0.65rem; font-weight: 600; color: {status_color}; min-width: 30px; text-align: right;">{prob*100:.1f}%</span></div>'
