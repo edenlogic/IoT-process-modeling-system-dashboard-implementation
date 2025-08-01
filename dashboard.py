@@ -1865,7 +1865,7 @@ def main():
         unsafe_allow_html=True
     )
 
-    tab_titles = ["대시보드", "설비 관리", "알림 관리", "리포트", "설정"]
+    tab_titles = ["대시보드", "설비 관리", "알림 관리", "리포트", "AI 분석", "설정"]
     tabs = st.tabs(tab_titles)
 
     # ----------- 사이드바(필터, AI 연동, 새로고침) 복원 -----------
@@ -2153,27 +2153,25 @@ def main():
                 # 카드 색상 결정
                 if max_status == 'normal':
                     card_class = "success"
-                    change_class = "success"
+                    icon = "🤖"
                 elif max_status in ['bearing_fault', 'roll_misalignment']:
                     card_class = "warning"
-                    change_class = "warning"
+                    icon = "⚠️"
                 else:
                     card_class = "danger"
-                    change_class = "danger"
+                    icon = "🚨"
                 
                 st.markdown(f"""
                 <div class="kpi-card {card_class} no-translate" translate="no" style="padding:0.5rem 0.4rem; min-height:70px; height:80px;">
-                    <div class="kpi-label" style="font-size:0.9rem; margin-bottom:0.08rem;">AI 설비 이상 예측</div>
-                    <div class="kpi-value" style="font-size:1.1rem; margin-bottom:0.08rem;">{status_names[max_status]}</div>
-                    <div class="kpi-change {change_class}" style="font-size:0.8rem; margin:0.08rem 0 0 0;">{max_prob:.1%}</div>
+                    <div class="kpi-label" style="font-size:0.9rem;">AI 설비 이상 예측</div>
+                    <div class="kpi-value" style="font-size:1.3rem;">{status_names[max_status]}</div>
                 </div>
                 """, unsafe_allow_html=True)
             else:
                 st.markdown(f"""
                 <div class="kpi-card no-translate" translate="no" style="padding:0.5rem 0.4rem; min-height:70px; height:80px;">
-                    <div class="kpi-label" style="font-size:0.9rem; margin-bottom:0.08rem;">AI 설비 이상 예측</div>
-                    <div class="kpi-value" style="font-size:1.1rem; margin-bottom:0.08rem;">예측 없음</div>
-                    <div class="kpi-change" style="font-size:0.8rem; margin:0.08rem 0 0 0;">데이터 없음</div>
+                    <div class="kpi-label" style="font-size:0.9rem;">AI 설비 이상 예측</div>
+                    <div class="kpi-value" style="font-size:1.3rem;">예측 없음</div>
                 </div>
                 """, unsafe_allow_html=True)
         
@@ -2187,27 +2185,23 @@ def main():
                 if prediction['prediction'] == 0:
                     status_text = '정상'
                     card_class = "success"
-                    change_class = "success"
+                    icon = "🔧"
                 else:
                     status_text = '이상 감지'
                     card_class = "danger"
-                    change_class = "danger"
-                
-                confidence = prediction['confidence']
+                    icon = "🚨"
                 
                 st.markdown(f"""
                 <div class="kpi-card {card_class} no-translate" translate="no" style="padding:0.5rem 0.4rem; min-height:70px; height:80px;">
-                    <div class="kpi-label" style="font-size:0.9rem; margin-bottom:0.08rem;">AI 유압 이상 탐지</div>
-                    <div class="kpi-value" style="font-size:1.1rem; margin-bottom:0.08rem;">{status_text}</div>
-                    <div class="kpi-change {change_class}" style="font-size:0.8rem; margin:0.08rem 0 0 0;">신뢰도 {confidence:.1%}</div>
+                    <div class="kpi-label" style="font-size:0.9rem;">AI 유압 이상 탐지</div>
+                    <div class="kpi-value" style="font-size:1.3rem;">{status_text}</div>
                 </div>
                 """, unsafe_allow_html=True)
             else:
                 st.markdown(f"""
                 <div class="kpi-card no-translate" translate="no" style="padding:0.5rem 0.4rem; min-height:70px; height:80px;">
-                    <div class="kpi-label" style="font-size:0.9rem; margin-bottom:0.08rem;">AI 유압 이상 탐지</div>
-                    <div class="kpi-value" style="font-size:1.1rem; margin-bottom:0.08rem;">예측 없음</div>
-                    <div class="kpi-change" style="font-size:0.8rem; margin:0.08rem 0 0 0;">데이터 없음</div>
+                    <div class="kpi-label" style="font-size:0.9rem;">AI 유압 이상 탐지</div>
+                    <div class="kpi-value" style="font-size:1.3rem;">예측 없음</div>
                 </div>
                 """, unsafe_allow_html=True)
         # 6개 정보 3,3으로 2행 배치 (상단: 설비 상태, 실시간 센서, 품질/생산 트렌드 / 하단: 업무 알림, AI 에너지 예측, AI 설비 이상 감지)
@@ -2299,7 +2293,7 @@ def main():
             update_alert_container(use_real_api)
         # 5. AI 설비 이상 예측
         with row_bottom[1]:
-            st.subheader("AI 설비 이상 예측")
+            st.markdown('<div class="chart-title no-translate" translate="no" style="font-size:1rem; margin-bottom:0.2rem;">AI 설비 이상 예측</div>', unsafe_allow_html=True)
             
             ai_predictions = get_ai_prediction_results(use_real_api)
             
@@ -2307,12 +2301,9 @@ def main():
                 abnormal_data = ai_predictions['abnormal_detection']
                 prediction = abnormal_data['prediction']
                 probabilities = prediction['probabilities']
-                
-                # 가장 높은 확률을 가진 상태 찾기
                 max_prob = max(probabilities.values())
                 max_status = [k for k, v in probabilities.items() if v == max_prob][0]
                 
-                # 상태명 한글화
                 status_names = {
                     'normal': '정상',
                     'bearing_fault': '베어링 고장',
@@ -2321,30 +2312,46 @@ def main():
                     'lubricant_shortage': '윤활유 부족'
                 }
                 
-                # 메인 상태 표시
-                if max_status == 'normal':
-                    st.success(f"🟢 {status_names[max_status]} ({max_prob:.1%})")
-                elif max_status in ['bearing_fault', 'roll_misalignment']:
-                    st.warning(f"🟠 {status_names[max_status]} ({max_prob:.1%})")
-                else:
-                    st.error(f"🔴 {status_names[max_status]} ({max_prob:.1%})")
+                # 상태별 색상 및 아이콘
+                status_config = {
+                    'normal': {'color': '#10B981', 'bg': '#ECFDF5', 'icon': '🟢'},
+                    'bearing_fault': {'color': '#F59E0B', 'bg': '#FFFBEB', 'icon': '🟠'},
+                    'roll_misalignment': {'color': '#F59E0B', 'bg': '#FFFBEB', 'icon': '🟠'},
+                    'motor_overload': {'color': '#EF4444', 'bg': '#FEF2F2', 'icon': '🔴'},
+                    'lubricant_shortage': {'color': '#EF4444', 'bg': '#FEF2F2', 'icon': '🔴'}
+                }
                 
-                # 확률들 표시
-                st.write("**상세 확률:**")
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.write(f"• 정상: {probabilities['normal']:.1%}")
-                    st.write(f"• 베어링 고장: {probabilities['bearing_fault']:.1%}")
-                    st.write(f"• 롤 정렬 불량: {probabilities['roll_misalignment']:.1%}")
-                with col2:
-                    st.write(f"• 모터 과부하: {probabilities['motor_overload']:.1%}")
-                    st.write(f"• 윤활유 부족: {probabilities['lubricant_shortage']:.1%}")
+                config = status_config[max_status]
+                
+                # 메인 상태 박스
+                st.markdown(f"""
+                <div style="background: {config['bg']}; border-radius: 8px; padding: 0.6rem; margin-bottom: 0.6rem; 
+                            box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid {config['color']}20;">
+                    <div style="display: flex; align-items: center; gap: 0.4rem;">
+                        <span style="font-size: 1rem;">{config['icon']}</span>
+                        <span style="font-size: 0.85rem; font-weight: 600; color: {config['color']};">
+                            {status_names[max_status]} ({max_prob:.1%})
+                        </span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # 상세 분석 (프로그레스 바) - 하나의 컨테이너에 모든 내용 포함
+                progress_bars_html = ""
+                for status, prob in probabilities.items():
+                    status_color = status_config[status]['color']
+                    status_icon = status_config[status]['icon']
+                    display_prob = max(prob, 5)  # 최소 5%로 표시
+                    
+                    progress_bars_html += f'<div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.3rem; padding: 0.2rem 0;"><span style="font-size: 0.65rem;">{status_icon}</span><span style="font-size: 0.7rem; font-weight: 500; min-width: 75px; color: #374151;">{status_names[status]}</span><div style="flex: 1; background: #f3f4f6; border-radius: 3px; height: 5px; overflow: hidden;"><div style="background: {status_color}; height: 100%; width: {display_prob:.1f}%; border-radius: 3px; transition: width 0.3s ease;"></div></div><span style="font-size: 0.65rem; font-weight: 600; color: {status_color}; min-width: 30px; text-align: right;">{prob:.1f}%</span></div>'
+                
+                st.markdown(f'<div style="background: white; border-radius: 8px; padding: 0.6rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid #e5e7eb; height: 140px; overflow-y: auto;">{progress_bars_html}</div>', unsafe_allow_html=True)
             else:
                 st.info("예측 결과 없음")
         
         # 6. AI 유압 이상 탐지
         with row_bottom[2]:
-            st.subheader("AI 유압 이상 탐지")
+            st.markdown('<div class="chart-title no-translate" translate="no" style="font-size:1rem; margin-bottom:0.2rem;">AI 유압 이상 탐지</div>', unsafe_allow_html=True)
             
             ai_predictions = get_ai_prediction_results(use_real_api)
             
@@ -2355,29 +2362,504 @@ def main():
                 # 상태 결정
                 if prediction['prediction'] == 0:
                     status_text = '정상'
+                    status_config = {'color': '#10B981', 'bg': '#ECFDF5', 'icon': '🟢'}
                 else:
                     status_text = '이상 감지'
+                    status_config = {'color': '#EF4444', 'bg': '#FEF2F2', 'icon': '🔴'}
                 
                 prediction_time = datetime.fromisoformat(hydraulic_data['timestamp']).strftime('%H:%M:%S')
                 
-                # 메인 상태 표시
-                if prediction['prediction'] == 0:
-                    st.success(f"🟢 {status_text} ({prediction['probabilities']['normal']:.1%})")
-                else:
-                    st.error(f"🔴 {status_text} ({prediction['probabilities']['abnormal']:.1%})")
+                # 메인 상태 박스
+                st.markdown(f"""
+                <div style="background: {status_config['bg']}; border-radius: 8px; padding: 0.6rem; margin-bottom: 0.6rem; 
+                            box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid {status_config['color']}20;">
+                    <div style="display: flex; align-items: center; gap: 0.4rem;">
+                        <span style="font-size: 1rem;">{status_config['icon']}</span>
+                        <span style="font-size: 0.85rem; font-weight: 600; color: {status_config['color']};">
+                            {status_text} ({prediction['confidence']:.1%})
+                        </span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
                 
-                # 상세 정보 표시
-                st.write("**상세 정보:**")
+                # 상세 메트릭 (2x2 플로팅 카드)
+                metrics = [
+                    ("정상 확률", f"{prediction['probabilities']['normal']:.1%}", "#10B981"),
+                    ("신뢰도", f"{prediction['confidence']:.1%}", "#3B82F6"),
+                    ("이상 확률", f"{prediction['probabilities']['abnormal']:.1%}", "#EF4444"),
+                    ("예측 시간", prediction_time, "#6B7280")
+                ]
+                
+                # 2x2 그리드로 플로팅 카드 배치 - st.columns 사용
                 col1, col2 = st.columns(2)
+                
                 with col1:
-                    st.write(f"• 정상 확률: {prediction['probabilities']['normal']:.1%}")
-                    st.write(f"• 이상 확률: {prediction['probabilities']['abnormal']:.1%}")
+                    # 첫 번째 행: 정상 확률, 신뢰도
+                    st.markdown(f"""
+                    <div style="background: white; border-radius: 6px; padding: 0.5rem; text-align: center; 
+                                box-shadow: 0 2px 4px rgba(0,0,0,0.1); border: 1px solid #e5e7eb; margin-bottom: 0.5rem;">
+                        <div style="font-size: 0.7rem; color: #6b7280; margin-bottom: 0.2rem;">{metrics[0][0]}</div>
+                        <div style="font-size: 0.85rem; font-weight: 600; color: {metrics[0][2]};">{metrics[0][1]}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    st.markdown(f"""
+                    <div style="background: white; border-radius: 6px; padding: 0.5rem; text-align: center; 
+                                box-shadow: 0 2px 4px rgba(0,0,0,0.1); border: 1px solid #e5e7eb;">
+                        <div style="font-size: 0.7rem; color: #6b7280; margin-bottom: 0.2rem;">{metrics[1][0]}</div>
+                        <div style="font-size: 0.85rem; font-weight: 600; color: {metrics[1][2]};">{metrics[1][1]}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
                 with col2:
-                    st.write(f"• 신뢰도: {prediction['confidence']:.1%}")
-                    st.write(f"• 예측 시간: {prediction_time}")
+                    # 두 번째 행: 이상 확률, 예측 시간
+                    st.markdown(f"""
+                    <div style="background: white; border-radius: 6px; padding: 0.5rem; text-align: center; 
+                                box-shadow: 0 2px 4px rgba(0,0,0,0.1); border: 1px solid #e5e7eb; margin-bottom: 0.5rem;">
+                        <div style="font-size: 0.7rem; color: #6b7280; margin-bottom: 0.2rem;">{metrics[2][0]}</div>
+                        <div style="font-size: 0.85rem; font-weight: 600; color: {metrics[2][2]};">{metrics[2][1]}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    st.markdown(f"""
+                    <div style="background: white; border-radius: 6px; padding: 0.5rem; text-align: center; 
+                                box-shadow: 0 2px 4px rgba(0,0,0,0.1); border: 1px solid #e5e7eb;">
+                        <div style="font-size: 0.7rem; color: #6b7280; margin-bottom: 0.2rem;">{metrics[3][0]}</div>
+                        <div style="font-size: 0.85rem; font-weight: 600; color: {metrics[3][2]};">{metrics[3][1]}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
             else:
                 st.info("예측 결과 없음")
 
+
+    with tabs[4]:  # AI 분석
+        st.markdown('<div class="main-header no-translate" translate="no">🤖 AI 분석</div>', unsafe_allow_html=True)
+        st.write("AI 모델을 활용한 설비 이상 예측 및 유압 시스템 이상 탐지 결과를 실시간으로 모니터링하고 분석할 수 있습니다.")
+        
+        # AI 예측 결과 가져오기
+        ai_predictions = get_ai_prediction_results(use_real_api)
+        
+        # 실시간 모니터링 대시보드
+        st.markdown("### 📊 실시간 AI 모니터링 대시보드")
+        
+        # 상단 상태 카드들
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            if ai_predictions.get('abnormal_detection', {}).get('status') == 'success':
+                abnormal_data = ai_predictions['abnormal_detection']
+                prediction = abnormal_data['prediction']
+                probabilities = prediction['probabilities']
+                max_prob = max(probabilities.values())
+                max_status = [k for k, v in probabilities.items() if v == max_prob][0]
+                
+                status_names = {
+                    'normal': '정상',
+                    'bearing_fault': '베어링 고장',
+                    'roll_misalignment': '롤 정렬 불량',
+                    'motor_overload': '모터 과부하',
+                    'lubricant_shortage': '윤활유 부족'
+                }
+                
+                if max_status == 'normal':
+                    st.metric("설비 상태", status_names[max_status], f"{max_prob:.1%}", delta_color="normal")
+                elif max_status in ['bearing_fault', 'roll_misalignment']:
+                    st.metric("설비 상태", status_names[max_status], f"{max_prob:.1%}", delta_color="off")
+                else:
+                    st.metric("설비 상태", status_names[max_status], f"{max_prob:.1%}", delta_color="inverse")
+            else:
+                st.metric("설비 상태", "데이터 없음", "0%")
+        
+        with col2:
+            if ai_predictions.get('hydraulic_detection', {}).get('status') == 'success':
+                hydraulic_data = ai_predictions['hydraulic_detection']
+                prediction = hydraulic_data['prediction']
+                
+                if prediction['prediction'] == 0:
+                    st.metric("유압 상태", "정상", f"{prediction['confidence']:.1%}", delta_color="normal")
+                else:
+                    st.metric("유압 상태", "이상", f"{prediction['confidence']:.1%}", delta_color="inverse")
+            else:
+                st.metric("유압 상태", "데이터 없음", "0%")
+        
+        with col3:
+            # 모델 성능 지표 (가상 데이터)
+            st.metric("설비 모델 정확도", "94.2%", "0.3%", delta_color="normal")
+        
+        with col4:
+            # 모델 성능 지표 (가상 데이터)
+            st.metric("유압 모델 정확도", "91.8%", "-0.2%", delta_color="off")
+        
+        # 실시간 알림 및 권장사항
+        st.markdown("### 🚨 실시간 알림 및 권장사항")
+        
+        # 알림 카드 생성
+        alert_cards = []
+        
+        # 설비 이상 예측 알림
+        if ai_predictions.get('abnormal_detection', {}).get('status') == 'success':
+            abnormal_data = ai_predictions['abnormal_detection']
+            prediction = abnormal_data['prediction']
+            probabilities = prediction['probabilities']
+            max_prob = max(probabilities.values())
+            max_status = [k for k, v in probabilities.items() if v == max_prob][0]
+            
+            if max_status != 'normal' and max_prob > 0.6:
+                alert_cards.append({
+                    'type': 'warning' if max_status in ['bearing_fault', 'roll_misalignment'] else 'error',
+                    'title': '설비 이상 감지',
+                    'message': f"{status_names[max_status]} 가능성이 {max_prob:.1%}로 높습니다.",
+                    'action': '즉시 점검이 필요합니다.',
+                    'icon': '🔧'
+                })
+        
+        # 유압 이상 탐지 알림
+        if ai_predictions.get('hydraulic_detection', {}).get('status') == 'success':
+            hydraulic_data = ai_predictions['hydraulic_detection']
+            prediction = hydraulic_data['prediction']
+            
+            if prediction['prediction'] == 1:
+                alert_cards.append({
+                    'type': 'error',
+                    'title': '유압 시스템 이상',
+                    'message': f"유압 시스템에서 이상이 감지되었습니다. (신뢰도: {prediction['confidence']:.1%})",
+                    'action': '유압 시스템 점검 및 정지가 필요합니다.',
+                    'icon': '⚡'
+                })
+        
+        # 알림이 없을 경우
+        if not alert_cards:
+            st.success("""
+            ✅ **현재 모든 시스템이 정상 상태입니다.**
+            
+            **현재 상태:**
+            - 설비 이상 예측: 정상 범위 내
+            - 유압 시스템: 정상 작동 중
+            - AI 모델: 정상 동작 중
+            """)
+        else:
+            # 알림 카드들 표시
+            for i, alert in enumerate(alert_cards):
+                if alert['type'] == 'error':
+                    st.error(f"""
+                    {alert['icon']} **{alert['title']}**
+                    
+                    {alert['message']}
+                    
+                    **권장 조치:** {alert['action']}
+                    """)
+                else:
+                    st.warning(f"""
+                    {alert['icon']} **{alert['title']}**
+                    
+                    {alert['message']}
+                    
+                    **권장 조치:** {alert['action']}
+                    """)
+        
+        # AI 모델 성능 대시보드
+        st.markdown("### 📈 AI 모델 성능 대시보드")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("#### 🔧 설비 이상 예측 모델")
+            
+            # 모델 성능 지표
+            col1_1, col1_2 = st.columns(2)
+            with col1_1:
+                st.metric("정확도", "94.2%", "0.3%")
+                st.metric("재현율", "92.1%", "0.5%")
+            with col1_2:
+                st.metric("정밀도", "95.8%", "-0.1%")
+                st.metric("F1-Score", "93.9%", "0.2%")
+            
+            # 최근 예측 이력 (가상 데이터)
+            st.markdown("**최근 예측 이력:**")
+            prediction_history = [
+                {"시간": "14:30", "상태": "정상", "확률": 87.2, "결과": "✅"},
+                {"시간": "14:25", "상태": "정상", "확률": 91.5, "결과": "✅"},
+                {"시간": "14:20", "상태": "베어링 고장", "확률": 23.1, "결과": "✅"},
+                {"시간": "14:15", "상태": "정상", "확률": 89.7, "결과": "✅"},
+                {"시간": "14:10", "상태": "정상", "확률": 92.3, "결과": "✅"}
+            ]
+            
+            for pred in prediction_history:
+                if pred["상태"] == "정상":
+                    status_color = "#10B981"
+                    bg_color = "#ECFDF5"
+                elif pred["상태"] == "베어링 고장":
+                    status_color = "#F59E0B"
+                    bg_color = "#FFFBEB"
+                elif pred["상태"] == "롤 정렬 불량":
+                    status_color = "#8B5CF6"
+                    bg_color = "#F3F4F6"
+                elif pred["상태"] == "모터 과부하":
+                    status_color = "#EF4444"
+                    bg_color = "#FEF2F2"
+                else:  # 윤활유 부족
+                    status_color = "#F97316"
+                    bg_color = "#FFF7ED"
+                
+                st.markdown(f"""
+                <div style="background: {bg_color}; border-radius: 8px; padding: 0.8rem; margin-bottom: 0.5rem;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                        <div style="display: flex; align-items: center; gap: 0.8rem;">
+                            <div style="font-weight: 600; color: {status_color}; min-width: 50px;">{pred['시간']}</div>
+                            <div style="font-weight: 600; color: #1e293b;">{pred['상태']}</div>
+                        </div>
+                        <div style="font-size: 1.1rem;">{pred['결과']}</div>
+                    </div>
+                    <div style="background: #e5e7eb; border-radius: 10px; height: 8px; overflow: hidden;">
+                        <div style="background: {status_color}; height: 100%; width: {pred['확률']}%; 
+                                    border-radius: 10px; transition: width 0.3s ease;"></div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-top: 0.3rem;">
+                        <span style="font-size: 0.8rem; color: #6b7280;">0%</span>
+                        <span style="font-size: 0.8rem; font-weight: 600; color: {status_color};">{pred['확률']}%</span>
+                        <span style="font-size: 0.8rem; color: #6b7280;">100%</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown("#### ⚡ 유압 이상 탐지 모델")
+            
+            # 모델 성능 지표
+            col2_1, col2_2 = st.columns(2)
+            with col2_1:
+                st.metric("정확도", "91.8%", "-0.2%")
+                st.metric("재현율", "89.5%", "0.1%")
+            with col2_2:
+                st.metric("정밀도", "93.2%", "-0.3%")
+                st.metric("F1-Score", "91.3%", "-0.1%")
+            
+            # 최근 예측 이력 (가상 데이터)
+            st.markdown("**최근 예측 이력:**")
+            hydraulic_history = [
+                {"시간": "14:30", "상태": "정상", "신뢰도": 94.1, "결과": "✅"},
+                {"시간": "14:25", "상태": "정상", "신뢰도": 96.2, "결과": "✅"},
+                {"시간": "14:20", "상태": "정상", "신뢰도": 92.8, "결과": "✅"},
+                {"시간": "14:15", "상태": "정상", "신뢰도": 95.3, "결과": "✅"},
+                {"시간": "14:10", "상태": "정상", "신뢰도": 93.7, "결과": "✅"}
+            ]
+            
+            for pred in hydraulic_history:
+                if pred["상태"] == "정상":
+                    status_color = "#10B981"
+                    bg_color = "#ECFDF5"
+                else:  # 이상
+                    status_color = "#EF4444"
+                    bg_color = "#FEF2F2"
+                
+                st.markdown(f"""
+                <div style="background: {bg_color}; border-radius: 8px; padding: 0.8rem; margin-bottom: 0.5rem;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                        <div style="display: flex; align-items: center; gap: 0.8rem;">
+                            <div style="font-weight: 600; color: {status_color}; min-width: 50px;">{pred['시간']}</div>
+                            <div style="font-weight: 600; color: #1e293b;">{pred['상태']}</div>
+                        </div>
+                        <div style="font-size: 1.1rem;">{pred['결과']}</div>
+                    </div>
+                    <div style="background: #e5e7eb; border-radius: 10px; height: 8px; overflow: hidden;">
+                        <div style="background: {status_color}; height: 100%; width: {pred['신뢰도']}%; 
+                                    border-radius: 10px; transition: width 0.3s ease;"></div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-top: 0.3rem;">
+                        <span style="font-size: 0.8rem; color: #6b7280;">0%</span>
+                        <span style="font-size: 0.8rem; font-weight: 600; color: {status_color};">{pred['신뢰도']}%</span>
+                        <span style="font-size: 0.8rem; color: #6b7280;">100%</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+        
+        # AI 설정 및 관리
+        st.markdown("### ⚙️ AI 모델 설정 및 관리")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("#### 🔔 알림 설정")
+            
+            # 알림 임계값 설정
+            st.markdown("**설비 이상 예측 알림 임계값:**")
+            col1_1, col1_2 = st.columns(2)
+            with col1_1:
+                bearing_threshold = st.slider("베어링 고장", 0.0, 1.0, 0.6, 0.1, key="bearing_thresh")
+                motor_threshold = st.slider("모터 과부하", 0.0, 1.0, 0.7, 0.1, key="motor_thresh")
+            with col1_2:
+                roll_threshold = st.slider("롤 정렬 불량", 0.0, 1.0, 0.6, 0.1, key="roll_thresh")
+                lubricant_threshold = st.slider("윤활유 부족", 0.0, 1.0, 0.7, 0.1, key="lubricant_thresh")
+            
+            # 유압 시스템 알림 설정
+            st.markdown("**유압 시스템 알림 설정:**")
+            hydraulic_threshold = st.slider("이상 감지 임계값", 0.0, 1.0, 0.8, 0.05, key="hydraulic_thresh")
+            
+            # 알림 방법 설정
+            st.markdown("**알림 방법:**")
+            email_alerts = st.checkbox("이메일 알림", value=True)
+            sms_alerts = st.checkbox("SMS 알림", value=False)
+            dashboard_alerts = st.checkbox("대시보드 알림", value=True)
+            
+            if st.button("설정 저장", key="save_ai_settings"):
+                st.success("AI 모델 설정이 저장되었습니다.")
+        
+        with col2:
+            st.markdown("#### 📊 모델 관리")
+            
+            # 모델 재학습 설정
+            st.markdown("**자동 재학습 설정:**")
+            col2_1, col2_2 = st.columns(2)
+            with col2_1:
+                st.markdown("**설비 모델:**")
+                st.write("• 재학습 주기: 매일")
+                st.write("• 마지막 재학습: 2024-01-15")
+                st.write("• 다음 재학습: 2024-01-16")
+            with col2_2:
+                st.markdown("**유압 모델:**")
+                st.write("• 재학습 주기: 주 1회")
+                st.write("• 마지막 재학습: 2024-01-12")
+                st.write("• 다음 재학습: 2024-01-19")
+            
+            # 수동 모델 관리
+            st.markdown("**수동 모델 관리:**")
+            col2_3, col2_4 = st.columns(2)
+            with col2_3:
+                if st.button("설비 모델 재학습", key="retrain_equipment"):
+                    st.info("설비 이상 예측 모델 재학습이 시작되었습니다. (예상 소요시간: 30분)")
+            with col2_4:
+                if st.button("유압 모델 재학습", key="retrain_hydraulic"):
+                    st.info("유압 이상 탐지 모델 재학습이 시작되었습니다. (예상 소요시간: 15분)")
+            
+            # 모델 백업 및 복원
+            st.markdown("**모델 백업:**")
+            if st.button("현재 모델 백업", key="backup_models"):
+                st.success("모델 백업이 완료되었습니다.")
+        
+        # 상세 분석 도구
+        st.markdown("### 🔍 상세 분석 도구")
+        
+        # 분석 옵션 선택
+        analysis_type = st.selectbox(
+            "분석 유형 선택",
+            ["실시간 예측 결과", "모델 성능 트렌드", "이상 패턴 분석", "예측 신뢰도 분석"]
+        )
+        
+        if analysis_type == "실시간 예측 결과":
+            st.markdown("#### 📊 현재 예측 결과 상세 분석")
+            
+            if ai_predictions.get('abnormal_detection', {}).get('status') == 'success':
+                abnormal_data = ai_predictions['abnormal_detection']
+                prediction = abnormal_data['prediction']
+                probabilities = prediction['probabilities']
+                
+                # 확률 분포를 테이블로 표시
+                prob_df = pd.DataFrame([
+                    {'상태': '정상', '확률': f"{probabilities['normal']:.1%}", '위험도': '낮음'},
+                    {'상태': '베어링 고장', '확률': f"{probabilities['bearing_fault']:.1%}", '위험도': '중간'},
+                    {'상태': '롤 정렬 불량', '확률': f"{probabilities['roll_misalignment']:.1%}", '위험도': '중간'},
+                    {'상태': '모터 과부하', '확률': f"{probabilities['motor_overload']:.1%}", '위험도': '높음'},
+                    {'상태': '윤활유 부족', '확률': f"{probabilities['lubricant_shortage']:.1%}", '위험도': '높음'}
+                ])
+                
+                st.dataframe(prob_df, use_container_width=True)
+                
+                # 분석 인사이트
+                max_prob = max(probabilities.values())
+                max_status = [k for k, v in probabilities.items() if v == max_prob][0]
+                
+                if max_status == 'normal':
+                    st.success("**분석 결과:** 설비가 정상 상태로 운영되고 있습니다.")
+                elif max_status in ['bearing_fault', 'roll_misalignment']:
+                    st.warning("**분석 결과:** 주의가 필요한 상태입니다. 정기 점검을 권장합니다.")
+                else:
+                    st.error("**분석 결과:** 즉시 조치가 필요한 상태입니다.")
+            
+            if ai_predictions.get('hydraulic_detection', {}).get('status') == 'success':
+                hydraulic_data = ai_predictions['hydraulic_detection']
+                prediction = hydraulic_data['prediction']
+                
+                st.markdown("**유압 시스템 분석:**")
+                if prediction['prediction'] == 0:
+                    st.success(f"유압 시스템이 정상 작동 중입니다. (신뢰도: {prediction['confidence']:.1%})")
+                else:
+                    st.error(f"유압 시스템에서 이상이 감지되었습니다. (신뢰도: {prediction['confidence']:.1%})")
+        
+        elif analysis_type == "모델 성능 트렌드":
+            st.markdown("#### 📈 모델 성능 트렌드 분석")
+            
+            # 가상 성능 트렌드 데이터
+            dates = pd.date_range(start='2024-01-01', end='2024-01-15', freq='D')
+            equipment_accuracy = [92.1, 93.2, 91.8, 94.1, 93.7, 94.2, 93.9, 94.5, 94.2, 93.8, 94.1, 94.3, 94.0, 94.2, 94.2]
+            hydraulic_accuracy = [90.5, 91.2, 90.8, 91.5, 91.8, 91.6, 91.9, 92.1, 91.8, 91.5, 91.7, 91.9, 91.8, 91.6, 91.8]
+            
+            trend_df = pd.DataFrame({
+                '날짜': dates,
+                '설비 모델 정확도': equipment_accuracy,
+                '유압 모델 정확도': hydraulic_accuracy
+            })
+            
+            fig = px.line(trend_df, x='날짜', y=['설비 모델 정확도', '유압 모델 정확도'],
+                         title="모델 성능 트렌드 (최근 15일)",
+                         labels={'value': '정확도 (%)', 'variable': '모델'})
+            fig.update_layout(plot_bgcolor='white', paper_bgcolor='white')
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # 트렌드 분석 결과
+            st.markdown("**트렌드 분석 결과:**")
+            st.write("• 설비 모델: 안정적인 성능을 보이고 있으며, 점진적 개선 추세")
+            st.write("• 유압 모델: 비교적 안정적이나, 약간의 변동성 존재")
+            st.write("• 전반적으로 두 모델 모두 만족스러운 성능 수준 유지")
+        
+        elif analysis_type == "이상 패턴 분석":
+            st.markdown("#### 🔍 이상 패턴 분석")
+            
+            # 가상 이상 패턴 데이터
+            pattern_data = {
+                '시간대': ['00-06시', '06-12시', '12-18시', '18-24시'],
+                '베어링 고장': [2, 5, 8, 3],
+                '롤 정렬 불량': [1, 3, 6, 2],
+                '모터 과부하': [0, 1, 3, 1],
+                '윤활유 부족': [0, 2, 4, 1]
+            }
+            
+            pattern_df = pd.DataFrame(pattern_data)
+            
+            fig = px.bar(pattern_df, x='시간대', y=['베어링 고장', '롤 정렬 불량', '모터 과부하', '윤활유 부족'],
+                        title="시간대별 이상 발생 패턴",
+                        barmode='stack')
+            fig.update_layout(plot_bgcolor='white', paper_bgcolor='white')
+            st.plotly_chart(fig, use_container_width=True)
+            
+            st.markdown("**패턴 분석 결과:**")
+            st.write("• 12-18시 시간대에 이상 발생 빈도가 가장 높음")
+            st.write("• 베어링 고장과 롤 정렬 불량이 주요 이상 유형")
+            st.write("• 야간 시간대(00-06시)에는 이상 발생이 적음")
+        
+        elif analysis_type == "예측 신뢰도 분석":
+            st.markdown("#### 🎯 예측 신뢰도 분석")
+            
+            # 가상 신뢰도 분포 데이터
+            confidence_ranges = ['90-95%', '85-90%', '80-85%', '75-80%', '70-75%']
+            equipment_counts = [45, 28, 15, 8, 4]
+            hydraulic_counts = [52, 31, 12, 3, 2]
+            
+            confidence_df = pd.DataFrame({
+                '신뢰도 범위': confidence_ranges,
+                '설비 모델': equipment_counts,
+                '유압 모델': hydraulic_counts
+            })
+            
+            fig = px.bar(confidence_df, x='신뢰도 범위', y=['설비 모델', '유압 모델'],
+                        title="예측 신뢰도 분포",
+                        barmode='group')
+            fig.update_layout(plot_bgcolor='white', paper_bgcolor='white')
+            st.plotly_chart(fig, use_container_width=True)
+            
+            st.markdown("**신뢰도 분석 결과:**")
+            st.write("• 대부분의 예측이 85% 이상의 높은 신뢰도를 보임")
+            st.write("• 유압 모델이 설비 모델보다 더 높은 신뢰도 분포")
+            st.write("• 70-75% 신뢰도 구간의 예측은 추가 검증 필요")
 
     with tabs[1]:  # 설비 관리
         st.markdown('<div class="main-header no-translate" translate="no">🏭 설비 관리</div>', unsafe_allow_html=True)
@@ -2614,7 +3096,7 @@ def main():
     </script>
     """, unsafe_allow_html=True)
 
-    with tabs[4]:  # 설정
+    with tabs[5]:  # 설정
         st.markdown('<div class="main-header no-translate" translate="no">⚙️ 설정</div>', unsafe_allow_html=True)
         st.write("대시보드 환경설정 및 알림, 데이터, 테마 설정을 할 수 있습니다.")
         st.subheader("알림 설정")
