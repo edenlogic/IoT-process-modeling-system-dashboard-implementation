@@ -75,19 +75,7 @@ def get_equipment_status_from_api(use_real_api=True):
         pass
     return []
 
-def get_alerts_from_api(use_real_api=True):
-    """FastAPI에서 알림 데이터 가져오기"""
-    if not use_real_api:
-        return []
-    
-    try:
-        response = requests.get(f"{API_BASE_URL}/api/alerts", timeout=5)
-        if response.status_code == 200:
-            data = response.json()
-            return data
-    except Exception as e:
-        pass
-    return []
+
 
 def get_quality_trend_from_api(use_real_api=True):
     """FastAPI에서 품질 추세 데이터 가져오기"""
@@ -221,10 +209,10 @@ def get_users_from_api(use_real_api=True):
             if response.status_code == 200:
                 return response.json()['users']
             else:
-                print(f"사용자 목록 API 오류: {response.status_code}")
+                # 사용자 목록 API 오류: {response.status_code}
                 return []
         except Exception as e:
-            print(f"사용자 목록 API 호출 오류: {e}")
+            # 사용자 목록 API 호출 오류: {e}
             return []
     else:
         return []
@@ -237,10 +225,10 @@ def get_equipment_users_from_api(equipment_id, use_real_api=True):
             if response.status_code == 200:
                 return response.json()['users']
             else:
-                print(f"설비별 사용자 API 오류: {response.status_code}")
+                # 설비별 사용자 API 오류: {response.status_code}
                 return []
         except Exception as e:
-            print(f"설비별 사용자 API 호출 오류: {e}")
+            # 설비별 사용자 API 호출 오류: {e}
             return []
     else:
         return []
@@ -288,10 +276,10 @@ def get_equipment_users_by_user(user_id):
         if response.status_code == 200:
             return response.json()['equipment']
         else:
-            print(f"사용자별 설비 API 오류: {response.status_code}")
+            # 사용자별 설비 API 오류: {response.status_code}
             return []
     except Exception as e:
-        print(f"사용자별 설비 API 호출 오류: {e}")
+        # 사용자별 설비 API 호출 오류: {e}
         return []
 
 def get_equipment_users_summary_api(use_real_api=True):
@@ -302,10 +290,10 @@ def get_equipment_users_summary_api(use_real_api=True):
             if response.status_code == 200:
                 return response.json()
             else:
-                print(f"요약 정보 API 오류: {response.status_code}")
+                # 요약 정보 API 오류: {response.status_code}
                 return {"summary": [], "total_assignments": 0, "total_primary_users": 0, "equipment_count": 0}
         except Exception as e:
-            print(f"요약 정보 API 호출 오류: {e}")
+            # 요약 정보 API 호출 오류: {e}
             return {"summary": [], "total_assignments": 0, "total_primary_users": 0, "equipment_count": 0}
     else:
         return {"summary": [], "total_assignments": 0, "total_primary_users": 0, "equipment_count": 0}
@@ -369,7 +357,7 @@ def background_data_fetcher():
                 )
                 
                 if data_changed:
-                    print(f"🔄 데이터 변경 감지! 센서: {has_sensor_data} ({current_sensor_count}), 알림: {current_alert_count}")
+                    # 데이터 변경 감지! 센서: {has_sensor_data} ({current_sensor_count}), 알림: {current_alert_count}
                     
                     # 전역 변수 업데이트
                     last_data_state.update({
@@ -382,12 +370,12 @@ def background_data_fetcher():
                 else:
                     pass
             else:
-                print(f"API 응답 오류: {response.status_code}")
+                pass  # API 응답 오류
                 
         except requests.exceptions.ConnectionError:
-            print("API 서버 연결 실패 - 서버가 실행 중인지 확인하세요")
+            pass  # API 서버 연결 실패
         except Exception as e:
-            print(f"백그라운드 데이터 가져오기 오류: {e}")
+            pass  # 백그라운드 데이터 가져오기 오류
         
         time.sleep(1)  # 1초마다 체크
 
@@ -397,7 +385,7 @@ def start_background_thread():
         st.session_state.background_thread_started = True
         # thread = threading.Thread(target=background_data_fetcher, daemon=True)
         # thread.start()
-        print("[DEBUG] 백그라운드 스레드 비활성화됨")
+        pass  # 백그라운드 스레드 비활성화됨
 
 # 실시간 업데이트 함수들 제거 (불필요)
 
@@ -1465,7 +1453,7 @@ def update_sensor_data_container(use_real_api=True, selected_sensor="전체"):
                 (isinstance(sensor_data, pd.DataFrame) and not sensor_data.empty)
             ):
                 st.session_state.data_cleared = False
-                print("[DEBUG] 센서 데이터 제거 플래그 해제됨")
+                pass  # 센서 데이터 제거 플래그 해제됨
             else:
                 sensor_data = generate_sensor_data()
         else:
@@ -1659,7 +1647,7 @@ def update_alert_container(use_real_api=True):
         # API 데이터를 가져왔으면 데이터 제거 플래그 해제
         if use_real_api and alerts:
             st.session_state.data_cleared = False
-            print("[DEBUG] 알림 데이터 제거 플래그 해제됨")
+            pass  # 알림 데이터 제거 플래그 해제됨
         
         # ERROR와 WARNING 발생한 경우만 필터링
         error_warning_alerts = [a for a in alerts if a['severity'] in ['error', 'warning']]
@@ -1739,7 +1727,7 @@ def update_equipment_container(use_real_api=True):
         # API 데이터를 가져왔으면 데이터 제거 플래그 해제
         if use_real_api and equipment_status:
             st.session_state.data_cleared = False
-            print("[DEBUG] 설비 상태 데이터 제거 플래그 해제됨")
+            pass  # 설비 상태 데이터 제거 플래그 해제됨
         table_data = []
         for eq in equipment_status:
             status_emoji = {'정상':'🟢','주의':'🟠','오류':'🔴'}.get(eq['status'],'🟢')
@@ -1768,7 +1756,7 @@ def start_data_update_thread(use_real_api=False):
                     st.session_state.last_update = time.time()
                 
             except Exception as e:
-                print(f"데이터 업데이트 오류: {e}")
+                pass  # 데이터 업데이트 오류
                 time.sleep(1)
     
     # 백그라운드 스레드 시작
@@ -1892,13 +1880,13 @@ def main():
             # 안전한 자동 새로고침 실행
             try:
                 st_autorefresh(interval=interval_ms, key="auto_refresh")
-                print(f"🔄 자동 새로고침 활성화: {refresh_interval}")
+                pass  # 자동 새로고침 활성화
             except Exception as refresh_error:
-                print(f"⚠️ 자동 새로고침 오류: {refresh_error}")
+                pass  # 자동 새로고침 오류
         except Exception as e:
-            print(f"⚠️ 자동 새로고침 설정 오류: {e}")
+            pass  # 자동 새로고침 설정 오류
     else:
-        print("🔄 수동 새로고침 모드")
+        pass  # 수동 새로고침 모드
 
     st.markdown(
         '''
@@ -2168,21 +2156,21 @@ def main():
             st.session_state.equipment_container = None
             st.session_state.api_toggle_previous = use_real_api
             
-            # API 토글이 ON으로 변경되었을 때 데이터베이스 초기화
+            # API 토글이 ON으로 변경되었을 때 센서 데이터만 초기화 (사용자 데이터는 보존)
             if use_real_api:
-                print(f"[DEBUG] API 토글 변경 감지: OFF -> ON")
+                pass  # API 토글 변경 감지
                 try:
-                    response = requests.post("http://localhost:8000/clear_data", timeout=5)
+                    response = requests.post("http://localhost:8000/clear_sensor_data", timeout=5)
                     if response.status_code == 200:
-                        print("[DEBUG] 데이터베이스 초기화 성공")
-                        st.success("API 연동 시작: 데이터베이스가 초기화되었습니다! 시뮬레이터 데이터가 곧 반영됩니다.")
+                        pass  # 센서 데이터 초기화 성공
+                        st.success("API 연동 시작: 센서 데이터가 초기화되었습니다! 시뮬레이터 데이터가 곧 반영됩니다.")
                         # 데이터 제거 플래그 설정
                         st.session_state.data_cleared = True
                     else:
-                        print(f"[DEBUG] 데이터베이스 초기화 실패: {response.status_code}")
-                        st.warning("API 연동 시작: 데이터 초기화 실패")
+                        pass  # 센서 데이터 초기화 실패
+                        st.warning("API 연동 시작: 센서 데이터 초기화 실패")
                 except Exception as e:
-                    print(f"[DEBUG] API 서버 연결 실패: {e}")
+                    pass  # API 서버 연결 실패
                     st.warning(f"API 연동 시작: 서버 연결 실패 - {e}")
         
         # 자동 새로고침 설정
@@ -2256,7 +2244,7 @@ def main():
         elif use_real_api:
             # API가 연결되면 데이터 제거 플래그 해제
             st.session_state.data_cleared = False
-            print("[DEBUG] 데이터 제거 플래그 해제됨")
+            pass  # 데이터 제거 플래그 해제됨
         
         # API 토글 상태에 따라 데이터 가져오기
         if use_real_api:
@@ -3788,14 +3776,13 @@ def main():
             st.button("엑셀 다운로드(확장)", disabled=True, key="alert_excel_btn")
 
     with tabs[3]:  # 리포트
-        st.markdown('<div class="main-header no-translate" translate="no">📈 리포트</div>', unsafe_allow_html=True)
-        st.write("기간별 주요 KPI, 생산량, 불량률, PPM, 알림 통계 등 리포트 상세를 제공합니다.")
+        st.markdown('<div class="main-header no-translate" translate="no">📈 리포트 & 분석</div>', unsafe_allow_html=True)
         
         # API 토글 상태에 따라 데이터 가져오기
         if use_real_api:
             try:
-                production_kpi = generate_production_kpi()  # KPI는 더미 데이터 사용
-                quality_data = generate_quality_trend()    # 품질 데이터는 더미 데이터 사용
+                production_kpi = generate_production_kpi()
+                quality_data = generate_quality_trend()
                 alerts = get_alerts_from_api(use_real_api)
                 equipment_data = get_equipment_status_from_api(use_real_api)
             except Exception as e:
@@ -3810,294 +3797,1100 @@ def main():
             alerts = generate_alert_data()
             equipment_data = generate_equipment_status()
         
-        # 기간 선택
-        st.markdown("### 📅 리포트 기간 설정")
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            report_range = st.selectbox("리포트 기간", ["최근 7일", "최근 30일", "올해", "전체"])
-        with col2:
-            report_type = st.selectbox("리포트 유형", ["종합 리포트", "생산성 리포트", "품질 리포트", "설비 리포트", "알림 리포트"])
-        with col3:
-            if st.button("📊 리포트 생성", key="generate_report"):
-                st.success("리포트가 생성되었습니다!")
+        # 리포트 설정 섹션
+        with st.expander("⚙️ 리포트 설정", expanded=True):
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                report_range = st.selectbox(
+                    "📅 기간 선택",
+                    ["최근 7일", "최근 30일", "최근 90일", "올해", "전체", "사용자 정의"],
+                    help="리포트에 포함할 데이터 기간을 선택하세요"
+                )
+                
+                if report_range == "사용자 정의":
+                    custom_start = st.date_input("시작일", datetime.now().date() - timedelta(days=7))
+                    custom_end = st.date_input("종료일", datetime.now().date())
+            
+            with col2:
+                report_type = st.selectbox(
+                    "📊 리포트 유형",
+                    ["종합 리포트", "생산성 리포트", "품질 리포트", "설비 분석 리포트", "알림 분석 리포트", "비용 분석 리포트"],
+                    help="생성할 리포트의 유형을 선택하세요"
+                )
+            
+            with col3:
+                report_format = st.selectbox(
+                    "📄 출력 형식",
+                    ["웹 리포트", "PDF", "Excel", "CSV", "PowerPoint"],
+                    help="리포트 출력 형식을 선택하세요"
+                )
+            
+            with col4:
+                st.markdown("<br>", unsafe_allow_html=True)
+                generate_btn = st.button(
+                    "🚀 리포트 생성",
+                    type="primary",
+                    use_container_width=True,
+                    help="선택한 설정으로 리포트를 생성합니다"
+                )
         
-        # KPI 요약
-        st.markdown("### 📊 주요 KPI 요약")
-        kpi_col1, kpi_col2, kpi_col3, kpi_col4 = st.columns(4, gap="small")
+        # 리포트 생성 상태 표시
+        if generate_btn:
+            with st.spinner("리포트를 생성하고 있습니다..."):
+                time.sleep(2)  # 시뮬레이션
+                st.success("✅ 리포트가 성공적으로 생성되었습니다!")
+                
+                # 생성된 리포트 정보 표시
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("📊 리포트 유형", report_type)
+                with col2:
+                    st.metric("📅 기간", report_range)
+                with col3:
+                    st.metric("📄 형식", report_format)
         
-        with kpi_col1:
+        # KPI 대시보드
+        st.markdown("### 📊 실시간 KPI 대시보드")
+        
+        # KPI 카드 행 1
+        kpi_row1 = st.columns(4, gap="small")
+        
+        with kpi_row1[0]:
+            oee_trend = "↗️" if production_kpi['oee'] > 85 else "↘️" if production_kpi['oee'] < 75 else "➡️"
             st.markdown(f"""
-            <div class="kpi-card success no-translate" translate="no" style="padding:0.5rem 0.4rem; min-height:70px; height:80px;">
-                <div class="kpi-label" style="font-size:0.9rem;">OEE(설비종합효율)</div>
-                <div class="kpi-value" style="font-size:1.3rem;">{production_kpi['oee']:.2f}%</div>
+            <div class="kpi-card success no-translate" translate="no" style="padding:1rem; min-height:100px; border-radius:12px; box-shadow:0 4px 6px rgba(0,0,0,0.1);">
+                <div class="kpi-label" style="font-size:0.9rem; color:#64748b; margin-bottom:0.5rem;">🏭 OEE (설비종합효율)</div>
+                <div class="kpi-value" style="font-size:2rem; font-weight:bold; color:#059669;">{production_kpi['oee']:.1f}%</div>
+                <div style="font-size:0.8rem; color:#64748b; margin-top:0.5rem;">{oee_trend} {production_kpi['oee']:.1f}%</div>
             </div>
             """, unsafe_allow_html=True)
         
-        with kpi_col2:
+        with kpi_row1[1]:
+            avail_trend = "↗️" if production_kpi['availability'] > 90 else "↘️" if production_kpi['availability'] < 80 else "➡️"
             st.markdown(f"""
-            <div class="kpi-card success no-translate" translate="no" style="padding:0.5rem 0.4rem; min-height:70px; height:80px;">
-                <div class="kpi-label" style="font-size:0.9rem;">가동률</div>
-                <div class="kpi-value" style="font-size:1.3rem;">{production_kpi['availability']:.2f}%</div>
+            <div class="kpi-card success no-translate" translate="no" style="padding:1rem; min-height:100px; border-radius:12px; box-shadow:0 4px 6px rgba(0,0,0,0.1);">
+                <div class="kpi-label" style="font-size:0.9rem; color:#64748b; margin-bottom:0.5rem;">⚡ 가동률</div>
+                <div class="kpi-value" style="font-size:2rem; font-weight:bold; color:#059669;">{production_kpi['availability']:.1f}%</div>
+                <div style="font-size:0.8rem; color:#64748b; margin-top:0.5rem;">{avail_trend} {production_kpi['availability']:.1f}%</div>
             </div>
             """, unsafe_allow_html=True)
         
-        with kpi_col3:
+        with kpi_row1[2]:
+            quality_trend = "↗️" if production_kpi['quality'] > 95 else "↘️" if production_kpi['quality'] < 90 else "➡️"
             st.markdown(f"""
-            <div class="kpi-card success no-translate" translate="no" style="padding:0.5rem 0.4rem; min-height:70px; height:80px;">
-                <div class="kpi-label" style="font-size:0.9rem;">품질률</div>
-                <div class="kpi-value" style="font-size:1.3rem;">{production_kpi['quality']:.2f}%</div>
+            <div class="kpi-card success no-translate" translate="no" style="padding:1rem; min-height:100px; border-radius:12px; box-shadow:0 4px 6px rgba(0,0,0,0.1);">
+                <div class="kpi-label" style="font-size:0.9rem; color:#64748b; margin-bottom:0.5rem;">🎯 품질률</div>
+                <div class="kpi-value" style="font-size:2rem; font-weight:bold; color:#059669;">{production_kpi['quality']:.1f}%</div>
+                <div style="font-size:0.8rem; color:#64748b; margin-top:0.5rem;">{quality_trend} {production_kpi['quality']:.1f}%</div>
             </div>
             """, unsafe_allow_html=True)
         
-        with kpi_col4:
+        with kpi_row1[3]:
+            defect_rate = 100 - production_kpi['quality']
+            defect_trend = "↘️" if defect_rate < 5 else "↗️" if defect_rate > 10 else "➡️"
             st.markdown(f"""
-            <div class="kpi-card warning no-translate" translate="no" style="padding:0.5rem 0.4rem; min-height:70px; height:80px;">
-                <div class="kpi-label" style="font-size:0.9rem;">불량률</div>
-                <div class="kpi-value" style="font-size:1.3rem;">{100-production_kpi['quality']:.2f}%</div>
+            <div class="kpi-card warning no-translate" translate="no" style="padding:1rem; min-height:100px; border-radius:12px; box-shadow:0 4px 6px rgba(0,0,0,0.1);">
+                <div class="kpi-label" style="font-size:0.9rem; color:#64748b; margin-bottom:0.5rem;">⚠️ 불량률</div>
+                <div class="kpi-value" style="font-size:2rem; font-weight:bold; color:#f59e0b;">{defect_rate:.1f}%</div>
+                <div style="font-size:0.8rem; color:#64748b; margin-top:0.5rem;">{defect_trend} {defect_rate:.1f}%</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # KPI 카드 행 2 (추가 지표)
+        kpi_row2 = st.columns(4, gap="small")
+        
+        with kpi_row2[0]:
+            # PPM 계산
+            ppm_value = (defect_rate / 100) * 1000000
+            st.markdown(f"""
+            <div class="kpi-card info no-translate" translate="no" style="padding:1rem; min-height:100px; border-radius:12px; box-shadow:0 4px 6px rgba(0,0,0,0.1);">
+                <div class="kpi-label" style="font-size:0.9rem; color:#64748b; margin-bottom:0.5rem;">📊 PPM</div>
+                <div class="kpi-value" style="font-size:2rem; font-weight:bold; color:#3b82f6;">{ppm_value:.0f}</div>
+                <div style="font-size:0.8rem; color:#64748b; margin-top:0.5rem;">불량 개수/백만 개</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with kpi_row2[1]:
+            # 생산량
+            avg_production = quality_data['production_volume'].mean()
+            st.markdown(f"""
+            <div class="kpi-card info no-translate" translate="no" style="padding:1rem; min-height:100px; border-radius:12px; box-shadow:0 4px 6px rgba(0,0,0,0.1);">
+                <div class="kpi-label" style="font-size:0.9rem; color:#64748b; margin-bottom:0.5rem;">📈 일평균 생산량</div>
+                <div class="kpi-value" style="font-size:2rem; font-weight:bold; color:#3b82f6;">{avg_production:.0f}</div>
+                <div style="font-size:0.8rem; color:#64748b; margin-top:0.5rem;">개/일</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with kpi_row2[2]:
+            # 알림 건수
+            alert_count = len(alerts)
+            st.markdown(f"""
+            <div class="kpi-card warning no-translate" translate="no" style="padding:1rem; min-height:100px; border-radius:12px; box-shadow:0 4px 6px rgba(0,0,0,0.1);">
+                <div class="kpi-label" style="font-size:0.9rem; color:#64748b; margin-bottom:0.5rem;">🚨 총 알림</div>
+                <div class="kpi-value" style="font-size:2rem; font-weight:bold; color:#f59e0b;">{alert_count}</div>
+                <div style="font-size:0.8rem; color:#64748b; margin-top:0.5rem;">건</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with kpi_row2[3]:
+            # 설비 상태
+            equipment_df = pd.DataFrame(equipment_data)
+            normal_equipment = len(equipment_df[equipment_df['status'] == '정상'])
+            total_equipment = len(equipment_df)
+            st.markdown(f"""
+            <div class="kpi-card success no-translate" translate="no" style="padding:1rem; min-height:100px; border-radius:12px; box-shadow:0 4px 6px rgba(0,0,0,0.1);">
+                <div class="kpi-label" style="font-size:0.9rem; color:#64748b; margin-bottom:0.5rem;">🔧 정상 설비</div>
+                <div class="kpi-value" style="font-size:2rem; font-weight:bold; color:#059669;">{normal_equipment}/{total_equipment}</div>
+                <div style="font-size:0.8rem; color:#64748b; margin-top:0.5rem;">{normal_equipment/total_equipment*100:.1f}%</div>
             </div>
             """, unsafe_allow_html=True)
         
         # 상세 분석 탭
-        report_tab1, report_tab2, report_tab3, report_tab4 = st.tabs(["생산성 분석", "품질 분석", "설비 분석", "알림 분석"])
+        st.markdown("### 📈 상세 분석")
+        report_tab1, report_tab2, report_tab3, report_tab4, report_tab5 = st.tabs([
+            "🏭 생산성 분석", 
+            "🎯 품질 분석", 
+            "🔧 설비 분석", 
+            "🚨 알림 분석",
+            "💰 비용 분석"
+        ])
         
         with report_tab1:
             st.markdown("### 🏭 생산성 분석")
             
-            # 생산량 트렌드
-            col1, col2 = st.columns(2)
+            # 생산성 개요
+            col1, col2, col3 = st.columns(3)
             
             with col1:
-                st.markdown("**일별 생산량 트렌드**")
+                st.markdown("**📊 생산성 개요**")
+                st.metric(
+                    "일평균 생산량", 
+                    f"{quality_data['production_volume'].mean():.0f}개",
+                    f"{quality_data['production_volume'].std():.0f}개"
+                )
+                st.metric(
+                    "생산량 변동계수", 
+                    f"{quality_data['production_volume'].std() / quality_data['production_volume'].mean():.2f}"
+                )
+            
+            with col2:
+                st.markdown("**📈 생산량 범위**")
+                st.metric(
+                    "최대 생산량", 
+                    f"{quality_data['production_volume'].max():.0f}개"
+                )
+                st.metric(
+                    "최소 생산량", 
+                    f"{quality_data['production_volume'].min():.0f}개"
+                )
+            
+            with col3:
+                st.markdown("**🎯 목표 대비**")
+                target_production = 1000  # 목표 생산량
+                current_avg = quality_data['production_volume'].mean()
+                achievement_rate = (current_avg / target_production) * 100
+                st.metric(
+                    "목표 달성률", 
+                    f"{achievement_rate:.1f}%",
+                    f"{achievement_rate - 100:.1f}%" if achievement_rate != 100 else "0%"
+                )
+            
+            # 생산량 트렌드 차트
+            st.markdown("**📈 생산량 트렌드 분석**")
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
                 fig = go.Figure()
+                
+                # 생산량 바 차트
                 fig.add_trace(go.Bar(
                     x=quality_data['day'],
                     y=quality_data['production_volume'],
-                    name='생산량',
-                    marker_color='#3b82f6'
+                    name='실제 생산량',
+                    marker_color='#3b82f6',
+                    opacity=0.8
                 ))
+                
+                # 목표선 추가
+                fig.add_hline(
+                    y=target_production, 
+                    line_dash="dash", 
+                    line_color="red",
+                    annotation_text="목표 생산량",
+                    annotation_position="top right"
+                )
+                
+                # 평균선 추가
+                fig.add_hline(
+                    y=current_avg, 
+                    line_dash="dot", 
+                    line_color="green",
+                    annotation_text="평균 생산량",
+                    annotation_position="bottom right"
+                )
+                
                 fig.update_layout(
-                    title="일별 생산량",
+                    title="일별 생산량 트렌드",
                     xaxis_title="요일",
-                    yaxis_title="생산량",
-                    height=300,
+                    yaxis_title="생산량 (개)",
+                    height=400,
                     plot_bgcolor='white',
-                    paper_bgcolor='white'
+                    paper_bgcolor='white',
+                    showlegend=True,
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
                 )
                 st.plotly_chart(fig, use_container_width=True)
             
             with col2:
-                st.markdown("**생산성 지표**")
-                st.metric("일평균 생산량", f"{quality_data['production_volume'].mean():.0f}개")
-                st.metric("최대 생산량", f"{quality_data['production_volume'].max():.0f}개")
-                st.metric("최소 생산량", f"{quality_data['production_volume'].min():.0f}개")
-                st.metric("생산량 변동계수", f"{quality_data['production_volume'].std() / quality_data['production_volume'].mean():.2f}")
+                st.markdown("**📊 생산성 통계**")
+                
+                # 생산량 분포 히스토그램
+                fig_hist = go.Figure()
+                fig_hist.add_trace(go.Histogram(
+                    x=quality_data['production_volume'],
+                    nbinsx=10,
+                    marker_color='#3b82f6',
+                    opacity=0.7
+                ))
+                fig_hist.update_layout(
+                    title="생산량 분포",
+                    xaxis_title="생산량",
+                    yaxis_title="빈도",
+                    height=300,
+                    plot_bgcolor='white',
+                    paper_bgcolor='white'
+                )
+                st.plotly_chart(fig_hist, use_container_width=True)
             
-            # 생산성 상세 테이블 (PPM은 더미 데이터 사용)
-            st.markdown("**생산성 상세 데이터**")
-            dummy_quality_data = generate_quality_trend()
-            detail_df = dummy_quality_data[['day', 'production_volume', 'defect_rate', 'PPM', 'quality_rate']].rename(columns={
-                'day': '요일', 'production_volume': '생산량', 'defect_rate': '불량률(%)', 'PPM': 'PPM', 'quality_rate': '품질률(%)'
+            # 생산성 상세 데이터 테이블
+            st.markdown("**📋 생산성 상세 데이터**")
+            
+            # 데이터프레임 생성 및 스타일링
+            detail_df = quality_data[['day', 'production_volume', 'defect_rate', 'PPM', 'quality_rate']].copy()
+            detail_df['생산성 지수'] = detail_df['production_volume'] * (detail_df['quality_rate'] / 100)
+            detail_df = detail_df.rename(columns={
+                'day': '요일', 
+                'production_volume': '생산량', 
+                'defect_rate': '불량률(%)', 
+                'PPM': 'PPM', 
+                'quality_rate': '품질률(%)',
+                '생산성 지수': '생산성 지수'
             })
-            st.dataframe(detail_df, use_container_width=True, height=250, hide_index=True)
+            
+            # 생산성 지수에 따른 색상 조건부 스타일링
+            def color_production_index(val):
+                if val > detail_df['생산성 지수'].mean() * 1.1:
+                    return 'background-color: #d1fae5'  # 연한 초록
+                elif val < detail_df['생산성 지수'].mean() * 0.9:
+                    return 'background-color: #fee2e2'  # 연한 빨강
+                else:
+                    return 'background-color: #fef3c7'  # 연한 노랑
+            
+            styled_df = detail_df.style.applymap(color_production_index, subset=['생산성 지수'])
+            st.dataframe(styled_df, use_container_width=True, height=300)
+            
+            # 생산성 개선 제안
+            st.markdown("**💡 생산성 개선 제안**")
+            if achievement_rate < 90:
+                st.warning("⚠️ 목표 달성률이 90% 미만입니다. 생산성 향상을 위한 조치가 필요합니다.")
+                st.info("🔧 제안사항: 설비 가동 시간 최적화, 작업자 교육 강화, 공정 개선 검토")
+            elif achievement_rate < 95:
+                st.info("ℹ️ 목표 달성률이 90-95% 범위에 있습니다. 지속적인 모니터링이 필요합니다.")
+            else:
+                st.success("✅ 목표 달성률이 95% 이상으로 우수한 성과를 보이고 있습니다.")
         
         with report_tab2:
             st.markdown("### 🎯 품질 분석")
             
-        # PPM/불량률 이중축 그래프 (항상 더미 데이터 사용)
-        st.markdown("**PPM/불량률 추이**")
-        dummy_quality_data = generate_quality_trend()
-        fig = go.Figure()
-        fig.add_trace(go.Bar(x=dummy_quality_data['day'], y=dummy_quality_data['PPM'], name='PPM', marker_color='#3b82f6'))
-        fig.add_trace(go.Scatter(x=dummy_quality_data['day'], y=dummy_quality_data['defect_rate'], name='불량률(%)', yaxis='y2', mode='lines+markers', line=dict(color='#ef4444', width=2)))
-        fig.update_layout(
-            yaxis=dict(title='PPM', side='left'),
-            yaxis2=dict(title='불량률(%)', overlaying='y', side='right'),
-            xaxis=dict(title='요일'),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-            height=300,
-            plot_bgcolor='white',
-            paper_bgcolor='white',
-            margin=dict(l=8, r=8, t=8, b=8),
-            font=dict(color='#1e293b', size=11)
-        )
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # 품질 지표 (항상 더미 데이터 사용)
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("평균 PPM", f"{dummy_quality_data['PPM'].mean():.1f}")
-        with col2:
-            st.metric("평균 불량률", f"{dummy_quality_data['defect_rate'].mean():.2f}%")
-        with col3:
-            st.metric("최고 품질률", f"{dummy_quality_data['quality_rate'].max():.2f}%")
-        with col4:
-            st.metric("품질 개선률", f"{(dummy_quality_data['quality_rate'].iloc[-1] - dummy_quality_data['quality_rate'].iloc[0]):.2f}%")
-        
-        # 품질 개선 제안 (항상 더미 데이터 사용)
-        st.markdown("**품질 개선 제안**")
-        if dummy_quality_data['defect_rate'].mean() > 2.0:
-            st.warning("⚠️ 평균 불량률이 2%를 초과하고 있습니다. 품질 관리 강화가 필요합니다.")
-        elif dummy_quality_data['defect_rate'].mean() > 1.0:
-            st.info("ℹ️ 불량률이 1-2% 범위에 있습니다. 지속적인 모니터링이 필요합니다.")
-        else:
-            st.success("✅ 불량률이 1% 미만으로 양호한 상태입니다.")
+            # 품질 개요
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.markdown("**📊 품질 개요**")
+                st.metric(
+                    "평균 품질률", 
+                    f"{quality_data['quality_rate'].mean():.1f}%",
+                    f"{quality_data['quality_rate'].std():.1f}%"
+                )
+                st.metric(
+                    "평균 불량률", 
+                    f"{quality_data['defect_rate'].mean():.2f}%"
+                )
+            
+            with col2:
+                st.markdown("**📈 품질 범위**")
+                st.metric(
+                    "최고 품질률", 
+                    f"{quality_data['quality_rate'].max():.1f}%"
+                )
+                st.metric(
+                    "최저 품질률", 
+                    f"{quality_data['quality_rate'].min():.1f}%"
+                )
+            
+            with col3:
+                st.markdown("**🎯 품질 개선**")
+                quality_improvement = quality_data['quality_rate'].iloc[-1] - quality_data['quality_rate'].iloc[0]
+                st.metric(
+                    "품질 개선률", 
+                    f"{quality_improvement:.2f}%",
+                    f"{quality_improvement:.2f}%" if quality_improvement != 0 else "0%"
+                )
+            
+            # 품질 트렌드 분석
+            st.markdown("**📈 품질 트렌드 분석**")
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                # PPM/불량률 이중축 그래프
+                fig = go.Figure()
+                
+                # PPM 바 차트
+                fig.add_trace(go.Bar(
+                    x=quality_data['day'], 
+                    y=quality_data['PPM'], 
+                    name='PPM', 
+                    marker_color='#3b82f6',
+                    opacity=0.7
+                ))
+                
+                # 불량률 선 그래프 (이중축)
+                fig.add_trace(go.Scatter(
+                    x=quality_data['day'], 
+                    y=quality_data['defect_rate'], 
+                    name='불량률(%)', 
+                    yaxis='y2', 
+                    mode='lines+markers', 
+                    line=dict(color='#ef4444', width=3),
+                    marker=dict(size=8)
+                ))
+                
+                # 품질률 선 그래프 (이중축)
+                fig.add_trace(go.Scatter(
+                    x=quality_data['day'], 
+                    y=quality_data['quality_rate'], 
+                    name='품질률(%)', 
+                    yaxis='y2', 
+                    mode='lines+markers', 
+                    line=dict(color='#10b981', width=3),
+                    marker=dict(size=8)
+                ))
+                
+                # 목표선 추가 (불량률 2% 기준선)
+                fig.add_hline(
+                    y=2.0, 
+                    line_dash="dash", 
+                    line_color="red",
+                    annotation_text="불량률 목표 (2%)",
+                    annotation_position="top right"
+                )
+                
+                fig.update_layout(
+                    title="품질 지표 트렌드",
+                    xaxis_title="요일",
+                    yaxis=dict(title='PPM', side='left', titlefont=dict(color='#3b82f6')),
+                    yaxis2=dict(title='비율 (%)', overlaying='y', side='right', titlefont=dict(color='#ef4444')),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    height=400,
+                    plot_bgcolor='white',
+                    paper_bgcolor='white',
+                    showlegend=True
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            
+            with col2:
+                st.markdown("**📊 품질 통계**")
+                
+                # 품질률 분포 히스토그램
+                fig_hist = go.Figure()
+                fig_hist.add_trace(go.Histogram(
+                    x=quality_data['quality_rate'],
+                    nbinsx=8,
+                    marker_color='#10b981',
+                    opacity=0.7
+                ))
+                fig_hist.update_layout(
+                    title="품질률 분포",
+                    xaxis_title="품질률 (%)",
+                    yaxis_title="빈도",
+                    height=300,
+                    plot_bgcolor='white',
+                    paper_bgcolor='white'
+                )
+                st.plotly_chart(fig_hist, use_container_width=True)
+            
+            # 품질 지표 상세
+            st.markdown("**📋 품질 지표 상세**")
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("평균 PPM", f"{quality_data['PPM'].mean():.1f}")
+            with col2:
+                st.metric("PPM 표준편차", f"{quality_data['PPM'].std():.1f}")
+            with col3:
+                st.metric("품질률 표준편차", f"{quality_data['quality_rate'].std():.2f}%")
+            with col4:
+                st.metric("불량률 표준편차", f"{quality_data['defect_rate'].std():.2f}%")
+            
+            # 품질 상세 데이터 테이블
+            st.markdown("**📊 품질 상세 데이터**")
+            
+            quality_detail_df = quality_data[['day', 'quality_rate', 'defect_rate', 'PPM']].copy()
+            quality_detail_df['품질 등급'] = quality_detail_df['quality_rate'].apply(
+                lambda x: 'A등급' if x >= 98 else 'B등급' if x >= 95 else 'C등급' if x >= 90 else 'D등급'
+            )
+            quality_detail_df = quality_detail_df.rename(columns={
+                'day': '요일', 
+                'quality_rate': '품질률(%)', 
+                'defect_rate': '불량률(%)', 
+                'PPM': 'PPM'
+            })
+            
+            # 품질 등급에 따른 색상 조건부 스타일링
+            def color_quality_grade(val):
+                if val == 'A등급':
+                    return 'background-color: #d1fae5; color: #065f46'  # 초록
+                elif val == 'B등급':
+                    return 'background-color: #fef3c7; color: #92400e'  # 노랑
+                elif val == 'C등급':
+                    return 'background-color: #fed7aa; color: #c2410c'  # 주황
+                else:
+                    return 'background-color: #fee2e2; color: #991b1b'  # 빨강
+            
+            styled_quality_df = quality_detail_df.style.applymap(color_quality_grade, subset=['품질 등급'])
+            st.dataframe(styled_quality_df, use_container_width=True, height=300)
+            
+            # 품질 개선 제안
+            st.markdown("**💡 품질 개선 제안**")
+            avg_defect_rate = quality_data['defect_rate'].mean()
+            
+            if avg_defect_rate > 2.0:
+                st.error("🚨 평균 불량률이 2%를 초과하고 있습니다. 즉시 품질 관리 강화가 필요합니다.")
+                st.info("🔧 긴급 제안사항: 공정 검토, 원자재 품질 확인, 작업자 교육 강화, 검사 기준 강화")
+            elif avg_defect_rate > 1.0:
+                st.warning("⚠️ 불량률이 1-2% 범위에 있습니다. 품질 관리 개선이 필요합니다.")
+                st.info("🔧 제안사항: 공정 최적화, 품질 관리 프로세스 검토, 예방 정비 강화")
+            elif avg_defect_rate > 0.5:
+                st.info("ℹ️ 불량률이 0.5-1% 범위에 있습니다. 지속적인 모니터링이 필요합니다.")
+                st.success("✅ 현재 품질 관리가 양호합니다. 지속적인 개선을 유지하세요.")
+            else:
+                st.success("✅ 불량률이 0.5% 미만으로 우수한 품질을 유지하고 있습니다.")
+                st.info("🏆 목표: 이 수준을 유지하고 더욱 개선하기 위한 혁신적 접근을 고려하세요.")
         
         with report_tab3:
             st.markdown("### 🔧 설비 분석")
             
-            # 설비 상태 분석
+            # 설비 데이터 준비
             equipment_df = pd.DataFrame(equipment_data)
             
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("**설비 상태 분포**")
-            status_counts = equipment_df['status'].value_counts()
+            # 설비 개요
+            col1, col2, col3 = st.columns(3)
             
-            fig = go.Figure(data=[go.Pie(labels=status_counts.index, values=status_counts.values)])
-            fig.update_layout(
-                title="설비 상태 분포",
-                height=300,
-                plot_bgcolor='white',
-                paper_bgcolor='white'
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        
-        with col2:
-            st.markdown("**설비 타입별 평균 효율**")
-            type_efficiency = equipment_df.groupby('type')['efficiency'].mean()
-            
-            fig = go.Figure(data=[go.Bar(x=type_efficiency.index, y=type_efficiency.values)])
-            fig.update_layout(
-                title="설비 타입별 평균 효율",
-                xaxis_title="설비 타입",
-                yaxis_title="평균 효율 (%)",
-                height=300,
-                plot_bgcolor='white',
-                paper_bgcolor='white'
-            )
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # 설비 성능 지표
-            st.markdown("**설비 성능 지표**")
-            col1, col2, col3, col4 = st.columns(4)
             with col1:
-                st.metric("전체 설비 수", len(equipment_df))
-            with col2:
-                st.metric("평균 효율", f"{equipment_df['efficiency'].mean():.1f}%")
-            with col3:
-                st.metric("정상 설비", len(equipment_df[equipment_df['status'] == '정상']))
-            with col4:
-                st.metric("주의/오류 설비", len(equipment_df[equipment_df['status'] != '정상']))
+                st.markdown("**📊 설비 개요**")
+                st.metric(
+                    "전체 설비 수", 
+                    len(equipment_df)
+                )
+                st.metric(
+                    "평균 효율", 
+                    f"{equipment_df['efficiency'].mean():.1f}%"
+                )
             
-            # 설비별 상세 성능
-            st.markdown("**설비별 상세 성능**")
-            st.dataframe(equipment_df[['name', 'type', 'status', 'efficiency', 'last_maintenance']], 
-                        use_container_width=True, height=200)
+            with col2:
+                st.markdown("**🔧 설비 상태**")
+                normal_count = len(equipment_df[equipment_df['status'] == '정상'])
+                warning_count = len(equipment_df[equipment_df['status'] == '주의'])
+                error_count = len(equipment_df[equipment_df['status'] == '오류'])
+                
+                st.metric(
+                    "정상 설비", 
+                    f"{normal_count}개",
+                    f"{normal_count/len(equipment_df)*100:.1f}%"
+                )
+                st.metric(
+                    "주의/오류 설비", 
+                    f"{warning_count + error_count}개"
+                )
+            
+            with col3:
+                st.markdown("**📈 효율성 분석**")
+                st.metric(
+                    "최고 효율", 
+                    f"{equipment_df['efficiency'].max():.1f}%"
+                )
+                st.metric(
+                    "최저 효율", 
+                    f"{equipment_df['efficiency'].min():.1f}%"
+                )
+            
+            # 설비 분석 차트
+            st.markdown("**📈 설비 분석 차트**")
+            col1, col2 = st.columns([1, 1])
+            
+            with col1:
+                # 설비 상태 분포 파이 차트
+                status_counts = equipment_df['status'].value_counts()
+                colors = ['#10b981', '#f59e0b', '#ef4444']  # 정상, 주의, 오류
+                
+                fig_pie = go.Figure(data=[go.Pie(
+                    labels=status_counts.index, 
+                    values=status_counts.values,
+                    hole=0.4,
+                    marker_colors=colors[:len(status_counts)]
+                )])
+                fig_pie.update_layout(
+                    title="설비 상태 분포",
+                    height=400,
+                    plot_bgcolor='white',
+                    paper_bgcolor='white',
+                    showlegend=True
+                )
+                st.plotly_chart(fig_pie, use_container_width=True)
+            
+            with col2:
+                # 설비 타입별 평균 효율 바 차트
+                type_efficiency = equipment_df.groupby('type')['efficiency'].mean().sort_values(ascending=True)
+                
+                fig_bar = go.Figure(data=[go.Bar(
+                    x=type_efficiency.values,
+                    y=type_efficiency.index,
+                    orientation='h',
+                    marker_color='#3b82f6',
+                    opacity=0.8
+                )])
+                fig_bar.update_layout(
+                    title="설비 타입별 평균 효율",
+                    xaxis_title="평균 효율 (%)",
+                    yaxis_title="설비 타입",
+                    height=400,
+                    plot_bgcolor='white',
+                    paper_bgcolor='white'
+                )
+                st.plotly_chart(fig_bar, use_container_width=True)
+            
+            # 설비 효율성 분석
+            st.markdown("**📊 설비 효율성 분석**")
+            col1, col2 = st.columns([1, 1])
+            
+            with col1:
+                # 효율 분포 히스토그램
+                fig_hist = go.Figure()
+                fig_hist.add_trace(go.Histogram(
+                    x=equipment_df['efficiency'],
+                    nbinsx=10,
+                    marker_color='#3b82f6',
+                    opacity=0.7
+                ))
+                fig_hist.update_layout(
+                    title="설비 효율 분포",
+                    xaxis_title="효율 (%)",
+                    yaxis_title="설비 수",
+                    height=300,
+                    plot_bgcolor='white',
+                    paper_bgcolor='white'
+                )
+                st.plotly_chart(fig_hist, use_container_width=True)
+            
+            with col2:
+                # 설비별 효율 순위
+                efficiency_ranking = equipment_df[['name', 'efficiency', 'status']].sort_values('efficiency', ascending=False)
+                efficiency_ranking['순위'] = range(1, len(efficiency_ranking) + 1)
+                efficiency_ranking = efficiency_ranking[['순위', 'name', 'efficiency', 'status']].head(10)
+                
+                st.markdown("**🏆 효율성 상위 10개 설비**")
+                st.dataframe(efficiency_ranking, use_container_width=True, height=300)
+            
+            # 설비 상세 성능 테이블
+            st.markdown("**📋 설비 상세 성능**")
+            
+            # 마지막 정비일을 datetime으로 변환
+            equipment_df['last_maintenance'] = pd.to_datetime(equipment_df['last_maintenance'])
+            equipment_df['days_since_maintenance'] = (datetime.now() - equipment_df['last_maintenance']).dt.days
+            
+            # 성능 등급 추가
+            equipment_df['성능 등급'] = equipment_df['efficiency'].apply(
+                lambda x: 'A등급' if x >= 95 else 'B등급' if x >= 85 else 'C등급' if x >= 75 else 'D등급'
+            )
+            
+            # 정비 필요성 평가
+            equipment_df['정비 필요성'] = equipment_df['days_since_maintenance'].apply(
+                lambda x: '긴급' if x > 30 else '주의' if x > 20 else '정상'
+            )
+            
+            display_df = equipment_df[['name', 'type', 'status', 'efficiency', '성능 등급', 'days_since_maintenance', '정비 필요성']].copy()
+            display_df = display_df.rename(columns={
+                'name': '설비명',
+                'type': '타입',
+                'status': '상태',
+                'efficiency': '효율(%)',
+                'days_since_maintenance': '정비 후 경과일'
+            })
+            
+            # 조건부 스타일링
+            def color_performance_grade(val):
+                if val == 'A등급':
+                    return 'background-color: #d1fae5; color: #065f46'
+                elif val == 'B등급':
+                    return 'background-color: #fef3c7; color: #92400e'
+                elif val == 'C등급':
+                    return 'background-color: #fed7aa; color: #c2410c'
+                else:
+                    return 'background-color: #fee2e2; color: #991b1b'
+            
+            def color_maintenance_need(val):
+                if val == '긴급':
+                    return 'background-color: #fee2e2; color: #991b1b'
+                elif val == '주의':
+                    return 'background-color: #fef3c7; color: #92400e'
+                else:
+                    return 'background-color: #d1fae5; color: #065f46'
+            
+            styled_equipment_df = display_df.style.applymap(color_performance_grade, subset=['성능 등급']).applymap(color_maintenance_need, subset=['정비 필요성'])
+            st.dataframe(styled_equipment_df, use_container_width=True, height=400)
+            
+            # 설비 관리 제안
+            st.markdown("**💡 설비 관리 제안**")
+            
+            low_efficiency_count = len(equipment_df[equipment_df['efficiency'] < 80])
+            urgent_maintenance_count = len(equipment_df[equipment_df['days_since_maintenance'] > 30])
+            
+            if low_efficiency_count > 0 or urgent_maintenance_count > 0:
+                if urgent_maintenance_count > 0:
+                    st.error(f"🚨 {urgent_maintenance_count}개 설비의 긴급 정비가 필요합니다.")
+                if low_efficiency_count > 0:
+                    st.warning(f"⚠️ {low_efficiency_count}개 설비의 효율이 80% 미만입니다.")
+                st.info("🔧 제안사항: 정비 일정 조정, 설비 점검 강화, 효율 개선 프로젝트 검토")
+            else:
+                st.success("✅ 설비 관리가 양호한 상태입니다. 지속적인 모니터링을 유지하세요.")
         
         with report_tab4:
             st.markdown("### 🚨 알림 분석")
             
-            # 알림 통계
+            # 알림 데이터 준비
             alert_df = pd.DataFrame(alerts)
             
-            col1, col2 = st.columns(2)
+            # 알림 개요
+            col1, col2, col3 = st.columns(3)
             
             with col1:
-                st.markdown("**알림 심각도별 통계**")
-                severity_counts = alert_df['severity'].value_counts()
-                
-                fig = go.Figure(data=[go.Bar(x=severity_counts.index, y=severity_counts.values)])
-                fig.update_layout(
-                    title="심각도별 알림 분포",
-                    xaxis_title="심각도",
-                    yaxis_title="알림 건수",
-                    height=300,
-                    plot_bgcolor='white',
-                    paper_bgcolor='white'
+                st.markdown("**📊 알림 개요**")
+                st.metric(
+                    "전체 알림", 
+                    len(alert_df)
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                if len(alert_df) > 0:
+                    st.metric(
+                        "일평균 알림", 
+                        f"{len(alert_df) / 7:.1f}건"
+                    )
             
             with col2:
-                st.markdown("**설비별 알림 건수**")
-                equipment_counts = alert_df['equipment'].value_counts().head(10)
+                st.markdown("**🚨 심각도별 분포**")
+                error_count = len(alert_df[alert_df['severity'] == 'error'])
+                warning_count = len(alert_df[alert_df['severity'] == 'warning'])
+                info_count = len(alert_df[alert_df['severity'] == 'info'])
                 
-                fig = go.Figure(data=[go.Bar(x=equipment_counts.values, y=equipment_counts.index, orientation='h')])
-                fig.update_layout(
-                    title="설비별 알림 발생 건수 (상위 10개)",
-                    xaxis_title="알림 건수",
-                    yaxis_title="설비명",
-                    height=300,
-                    plot_bgcolor='white',
-                    paper_bgcolor='white'
+                st.metric(
+                    "긴급 알림", 
+                    f"{error_count}건",
+                    f"{error_count/len(alert_df)*100:.1f}%" if len(alert_df) > 0 else "0%"
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.metric(
+                    "주의 알림", 
+                    f"{warning_count}건"
+                )
             
-            # 알림 지표
-            st.markdown("**알림 지표**")
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("전체 알림", len(alert_df))
-            with col2:
-                st.metric("긴급 알림", len(alert_df[alert_df['severity'] == 'error']))
             with col3:
-                st.metric("주의 알림", len(alert_df[alert_df['severity'] == 'warning']))
-            with col4:
-                st.metric("정보 알림", len(alert_df[alert_df['severity'] == 'info']))
+                st.markdown("**📈 알림 트렌드**")
+                if len(alert_df) > 0:
+                    st.metric(
+                        "정보 알림", 
+                        f"{info_count}건"
+                    )
+                    st.metric(
+                        "알림 해결률", 
+                        "85.2%"  # 더미 데이터
+                    )
             
-            # 알림 패턴 분석
-            st.markdown("**알림 패턴 분석**")
-            if len(alert_df) > 0:
-                most_common_equipment = alert_df['equipment'].mode()[0] if len(alert_df['equipment'].mode()) > 0 else "없음"
-                most_common_severity = alert_df['severity'].mode()[0] if len(alert_df['severity'].mode()) > 0 else "없음"
-                
-                st.write(f"**가장 많은 알림 발생 설비:** {most_common_equipment}")
-                st.write(f"**가장 빈번한 알림 유형:** {most_common_severity}")
-                
-                if len(alert_df[alert_df['severity'] == 'error']) > len(alert_df) * 0.3:
-                    st.error("🚨 긴급 알림 비율이 30%를 초과하고 있습니다. 즉시 조치가 필요합니다.")
-                elif len(alert_df[alert_df['severity'] == 'error']) > len(alert_df) * 0.1:
-                    st.warning("⚠️ 긴급 알림 비율이 10%를 초과하고 있습니다. 주의가 필요합니다.")
+            # 알림 분석 차트
+            st.markdown("**📈 알림 분석 차트**")
+            col1, col2 = st.columns([1, 1])
+            
+            with col1:
+                # 심각도별 알림 분포 파이 차트
+                if len(alert_df) > 0:
+                    severity_counts = alert_df['severity'].value_counts()
+                    colors = ['#ef4444', '#f59e0b', '#3b82f6']  # error, warning, info
+                    
+                    fig_pie = go.Figure(data=[go.Pie(
+                        labels=severity_counts.index, 
+                        values=severity_counts.values,
+                        hole=0.4,
+                        marker_colors=colors[:len(severity_counts)]
+                    )])
+                    fig_pie.update_layout(
+                        title="심각도별 알림 분포",
+                        height=400,
+                        plot_bgcolor='white',
+                        paper_bgcolor='white',
+                        showlegend=True
+                    )
+                    st.plotly_chart(fig_pie, use_container_width=True)
                 else:
-                    st.success("✅ 알림 상황이 양호합니다.")
+                    st.info("📊 알림 데이터가 없습니다.")
+            
+            with col2:
+                # 설비별 알림 건수 바 차트
+                if len(alert_df) > 0:
+                    equipment_counts = alert_df['equipment'].value_counts().head(8)
+                    
+                    fig_bar = go.Figure(data=[go.Bar(
+                        x=equipment_counts.values,
+                        y=equipment_counts.index,
+                        orientation='h',
+                        marker_color='#ef4444',
+                        opacity=0.8
+                    )])
+                    fig_bar.update_layout(
+                        title="설비별 알림 발생 건수 (상위 8개)",
+                        xaxis_title="알림 건수",
+                        yaxis_title="설비명",
+                        height=400,
+                        plot_bgcolor='white',
+                        paper_bgcolor='white'
+                    )
+                    st.plotly_chart(fig_bar, use_container_width=True)
+                else:
+                    st.info("📊 알림 데이터가 없습니다.")
+            
+            # 알림 상세 분석
+            if len(alert_df) > 0:
+                st.markdown("**📋 알림 상세 분석**")
+                col1, col2 = st.columns([1, 1])
+                
+                with col1:
+                    # 알림 지표 상세
+                    st.markdown("**📊 알림 지표 상세**")
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.metric("긴급 알림", f"{error_count}건")
+                        st.metric("주의 알림", f"{warning_count}건")
+                    
+                    with col2:
+                        st.metric("정보 알림", f"{info_count}건")
+                        st.metric("평균 응답시간", "2.3분")
+                
+                with col2:
+                    # 알림 패턴 분석
+                    st.markdown("**🔍 알림 패턴 분석**")
+                    
+                    if len(alert_df) > 0:
+                        most_common_equipment = alert_df['equipment'].mode()[0] if len(alert_df['equipment'].mode()) > 0 else "없음"
+                        most_common_severity = alert_df['severity'].mode()[0] if len(alert_df['severity'].mode()) > 0 else "없음"
+                        
+                        st.write(f"**🔧 가장 많은 알림 발생 설비:** {most_common_equipment}")
+                        st.write(f"**⚠️ 가장 빈번한 알림 유형:** {most_common_severity}")
+                        
+                        # 알림 심각도 비율 분석
+                        error_ratio = error_count / len(alert_df) * 100
+                        if error_ratio > 30:
+                            st.error(f"🚨 긴급 알림 비율이 {error_ratio:.1f}%로 매우 높습니다!")
+                        elif error_ratio > 10:
+                            st.warning(f"⚠️ 긴급 알림 비율이 {error_ratio:.1f}%로 높습니다.")
+                        else:
+                            st.success(f"✅ 긴급 알림 비율이 {error_ratio:.1f}%로 양호합니다.")
+                
+                # 알림 상세 데이터 테이블
+                st.markdown("**📊 알림 상세 데이터**")
+                
+                # 알림 데이터 전처리
+                alert_detail_df = alert_df.copy()
+                if 'timestamp' in alert_detail_df.columns:
+                    alert_detail_df['timestamp'] = pd.to_datetime(alert_detail_df['timestamp'])
+                    alert_detail_df['발생시간'] = alert_detail_df['timestamp'].dt.strftime('%Y-%m-%d %H:%M')
+                else:
+                    alert_detail_df['발생시간'] = 'N/A'
+                
+                # 심각도 한글화
+                severity_map = {'error': '긴급', 'warning': '주의', 'info': '정보'}
+                alert_detail_df['심각도'] = alert_detail_df['severity'].map(severity_map)
+                
+                # 상태 정보 추가 (더미 데이터)
+                status_options = ['해결됨', '처리중', '미처리']
+                alert_detail_df['상태'] = [status_options[i % len(status_options)] for i in range(len(alert_detail_df))]
+                
+                # 실제 알림 데이터의 컬럼에 맞게 수정
+                available_columns = alert_detail_df.columns.tolist()
+                
+                # 필요한 컬럼들이 있는지 확인하고 없으면 기본값 설정
+                if 'sensor_type' not in available_columns:
+                    alert_detail_df['sensor_type'] = 'N/A'
+                if 'value' not in available_columns:
+                    alert_detail_df['value'] = 'N/A'
+                
+                display_alert_df = alert_detail_df[['equipment', 'sensor_type', '심각도', 'value', '발생시간', '상태']].copy()
+                display_alert_df = display_alert_df.rename(columns={
+                    'equipment': '설비명',
+                    'sensor_type': '센서',
+                    'value': '측정값'
+                })
+                
+                # 조건부 스타일링
+                def color_severity(val):
+                    if val == '긴급':
+                        return 'background-color: #fee2e2; color: #991b1b'
+                    elif val == '주의':
+                        return 'background-color: #fef3c7; color: #92400e'
+                    else:
+                        return 'background-color: #dbeafe; color: #1e40af'
+                
+                def color_status(val):
+                    if val == '해결됨':
+                        return 'background-color: #d1fae5; color: #065f46'
+                    elif val == '처리중':
+                        return 'background-color: #fef3c7; color: #92400e'
+                    else:
+                        return 'background-color: #fee2e2; color: #991b1b'
+                
+                styled_alert_df = display_alert_df.style.applymap(color_severity, subset=['심각도']).applymap(color_status, subset=['상태'])
+                st.dataframe(styled_alert_df, use_container_width=True, height=300)
+                
+                # 알림 관리 제안
+                st.markdown("**💡 알림 관리 제안**")
+                
+                if error_ratio > 30:
+                    st.error("🚨 긴급 알림 비율이 30%를 초과하고 있습니다. 즉시 조치가 필요합니다.")
+                    st.info("🔧 긴급 제안사항: 설비 점검 강화, 예방 정비 일정 조정, 알림 임계값 재검토")
+                elif error_ratio > 10:
+                    st.warning("⚠️ 긴급 알림 비율이 10%를 초과하고 있습니다. 주의가 필요합니다.")
+                    st.info("🔧 제안사항: 알림 관리 프로세스 개선, 설비 상태 모니터링 강화")
+                elif len(alert_df) > 0:
+                    st.success("✅ 알림 상황이 양호합니다. 지속적인 모니터링을 유지하세요.")
+                else:
+                    st.success("✅ 알림이 없어 매우 양호한 상태입니다.")
             else:
-                st.success("✅ 알림이 없습니다.")
+                st.success("✅ 현재 알림이 없어 매우 양호한 상태입니다.")
+                st.info("📊 알림 데이터가 생성되면 상세한 분석이 제공됩니다.")
+        
+        with report_tab5:
+            st.markdown("### 💰 비용 분석")
+            
+            # 비용 개요
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.markdown("**📊 비용 개요**")
+                st.metric(
+                    "총 운영 비용", 
+                    "₩2,450,000",
+                    "₩180,000"
+                )
+                st.metric(
+                    "일평균 비용", 
+                    "₩350,000"
+                )
+            
+            with col2:
+                st.markdown("**💰 비용 분류**")
+                st.metric(
+                    "인건비", 
+                    "₩1,200,000",
+                    "45%"
+                )
+                st.metric(
+                    "설비 유지보수", 
+                    "₩800,000",
+                    "30%"
+                )
+            
+            with col3:
+                st.markdown("**📈 비용 효율성**")
+                st.metric(
+                    "생산성 대비 비용", 
+                    "₩245/개"
+                )
+                st.metric(
+                    "비용 절감률", 
+                    "12.5%",
+                    "2.3%"
+                )
+            
+            # 비용 분석 차트
+            st.markdown("**📈 비용 분석 차트**")
+            col1, col2 = st.columns([1, 1])
+            
+            with col1:
+                # 비용 분류 파이 차트
+                cost_categories = ['인건비', '설비 유지보수', '원자재', '에너지', '기타']
+                cost_values = [1200000, 800000, 300000, 100000, 50000]
+                colors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6']
+                
+                fig_pie = go.Figure(data=[go.Pie(
+                    labels=cost_categories, 
+                    values=cost_values,
+                    hole=0.4,
+                    marker_colors=colors
+                )])
+                fig_pie.update_layout(
+                    title="비용 분류별 구성",
+                    height=400,
+                    plot_bgcolor='white',
+                    paper_bgcolor='white',
+                    showlegend=True
+                )
+                st.plotly_chart(fig_pie, use_container_width=True)
+            
+            with col2:
+                # 일별 비용 트렌드
+                days = ['월', '화', '수', '목', '금', '토', '일']
+                daily_costs = [320000, 350000, 380000, 340000, 360000, 280000, 260000]
+                
+                fig_line = go.Figure()
+                fig_line.add_trace(go.Scatter(
+                    x=days,
+                    y=daily_costs,
+                    mode='lines+markers',
+                    name='일별 비용',
+                    line=dict(color='#3b82f6', width=3),
+                    marker=dict(size=8)
+                ))
+                fig_line.update_layout(
+                    title="일별 운영 비용 트렌드",
+                    xaxis_title="요일",
+                    yaxis_title="비용 (₩)",
+                    height=400,
+                    plot_bgcolor='white',
+                    paper_bgcolor='white'
+                )
+                st.plotly_chart(fig_line, use_container_width=True)
+            
+            # 비용 상세 분석
+            st.markdown("**📋 비용 상세 분석**")
+            col1, col2 = st.columns([1, 1])
+            
+            with col1:
+                # 비용 효율성 지표
+                st.markdown("**📊 비용 효율성 지표**")
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.metric("생산성 대비 비용", "₩245/개")
+                    st.metric("설비당 평균 비용", "₩153,125")
+                
+                with col2:
+                    st.metric("품질 대비 비용", "₩2.45/품질점수")
+                    st.metric("시간당 비용", "₩29,167")
+            
+            with col2:
+                # 비용 절감 기회
+                st.markdown("**💡 비용 절감 기회**")
+                
+                savings_opportunities = [
+                    {"항목": "에너지 효율화", "절감 가능액": "₩50,000", "우선순위": "높음"},
+                    {"항목": "예방 정비 최적화", "절감 가능액": "₩30,000", "우선순위": "중간"},
+                    {"항목": "인력 배치 최적화", "절감 가능액": "₩40,000", "우선순위": "높음"}
+                ]
+                
+                for opp in savings_opportunities:
+                    priority_color = "🔴" if opp["우선순위"] == "높음" else "🟡" if opp["우선순위"] == "중간" else "🟢"
+                    st.write(f"{priority_color} **{opp['항목']}**: {opp['절감 가능액']} ({opp['우선순위']})")
+            
+            # 비용 상세 데이터 테이블
+            st.markdown("**📊 비용 상세 데이터**")
+            
+            cost_detail_data = [
+                {"비용 항목": "인건비", "금액": "₩1,200,000", "비율": "45%", "전월 대비": "+5%", "상태": "정상"},
+                {"비용 항목": "설비 유지보수", "금액": "₩800,000", "비율": "30%", "전월 대비": "-2%", "상태": "개선"},
+                {"비용 항목": "원자재", "금액": "₩300,000", "비율": "11%", "전월 대비": "+1%", "상태": "정상"},
+                {"비용 항목": "에너지", "금액": "₩100,000", "비율": "4%", "전월 대비": "-8%", "상태": "개선"},
+                {"비용 항목": "기타", "금액": "₩50,000", "비율": "2%", "전월 대비": "0%", "상태": "정상"}
+            ]
+            
+            cost_df = pd.DataFrame(cost_detail_data)
+            
+            # 조건부 스타일링
+            def color_status(val):
+                if val == "개선":
+                    return 'background-color: #d1fae5; color: #065f46'
+                elif val == "주의":
+                    return 'background-color: #fef3c7; color: #92400e'
+                else:
+                    return 'background-color: #f3f4f6; color: #374151'
+            
+            styled_cost_df = cost_df.style.applymap(color_status, subset=['상태'])
+            st.dataframe(styled_cost_df, use_container_width=True, height=300)
+            
+            # 비용 관리 제안
+            st.markdown("**💡 비용 관리 제안**")
+            
+            total_cost = 2450000
+            cost_efficiency = total_cost / quality_data['production_volume'].mean()
+            
+            if cost_efficiency > 300:
+                st.error("🚨 생산성 대비 비용이 높습니다. 비용 최적화가 필요합니다.")
+                st.info("🔧 긴급 제안사항: 에너지 효율화, 인력 배치 최적화, 공정 개선")
+            elif cost_efficiency > 250:
+                st.warning("⚠️ 비용 효율성 개선의 여지가 있습니다.")
+                st.info("🔧 제안사항: 예방 정비 최적화, 원자재 사용량 최적화")
+            else:
+                st.success("✅ 비용 효율성이 양호합니다. 지속적인 모니터링을 유지하세요.")
         
         # 리포트 다운로드 및 공유
         st.markdown("### 💾 리포트 다운로드 및 공유")
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            export_format = st.selectbox("내보내기 형식", ["PDF", "Excel", "CSV"], key="report_export_format")
-            if st.button("📄 리포트 다운로드", key="download_report"):
-                st.success(f"{export_format} 형식으로 리포트가 다운로드되었습니다.")
+            export_format = st.selectbox("내보내기 형식", ["PDF", "Excel", "CSV", "PowerPoint"], key="report_export_format")
+            if st.button("📄 리포트 다운로드", key="download_report", type="primary"):
+                with st.spinner("리포트를 생성하고 있습니다..."):
+                    time.sleep(1)
+                    st.success(f"✅ {export_format} 형식으로 리포트가 다운로드되었습니다.")
         
         with col2:
             email_address = st.text_input("이메일 주소", placeholder="example@posco.com", key="report_email")
             if st.button("📧 이메일 전송", key="email_report"):
                 if email_address:
-                    st.success(f"리포트가 {email_address}로 전송되었습니다.")
+                    with st.spinner("이메일을 전송하고 있습니다..."):
+                        time.sleep(1)
+                        st.success(f"✅ 리포트가 {email_address}로 전송되었습니다.")
                 else:
-                    st.error("이메일 주소를 입력해주세요.")
+                    st.error("❌ 이메일 주소를 입력해주세요.")
         
         with col3:
             schedule_report = st.checkbox("정기 리포트 예약", key="schedule_report")
             if schedule_report:
                 schedule_frequency = st.selectbox("전송 주기", ["매일", "매주", "매월"], key="report_frequency")
                 if st.button("📅 예약 설정", key="set_schedule"):
-                    st.success(f"{schedule_frequency} 정기 리포트가 예약되었습니다.")
+                    st.success(f"✅ {schedule_frequency} 정기 리포트가 예약되었습니다.")
         
         # 리포트 히스토리
         st.markdown("### 📚 리포트 히스토리")
+        
+        # 더 상세한 리포트 히스토리
         report_history = [
-            {"날짜": "2024-01-15", "리포트명": "일일 생산성 리포트", "생성자": "시스템", "상태": "완료"},
-            {"날짜": "2024-01-14", "리포트명": "주간 품질 리포트", "생성자": "관리자", "상태": "완료"},
-            {"날짜": "2024-01-13", "리포트명": "설비 상태 리포트", "생성자": "시스템", "상태": "완료"},
-            {"날짜": "2024-01-12", "리포트명": "월간 종합 리포트", "생성자": "관리자", "상태": "완료"}
+            {"날짜": "2024-01-15", "리포트명": "일일 생산성 리포트", "생성자": "시스템", "상태": "완료", "다운로드": "15회"},
+            {"날짜": "2024-01-14", "리포트명": "주간 품질 리포트", "생성자": "관리자", "상태": "완료", "다운로드": "8회"},
+            {"날짜": "2024-01-13", "리포트명": "설비 상태 리포트", "생성자": "시스템", "상태": "완료", "다운로드": "12회"},
+            {"날짜": "2024-01-12", "리포트명": "월간 종합 리포트", "생성자": "관리자", "상태": "완료", "다운로드": "25회"},
+            {"날짜": "2024-01-11", "리포트명": "비용 분석 리포트", "생성자": "시스템", "상태": "완료", "다운로드": "6회"}
         ]
         
         history_df = pd.DataFrame(report_history)
-        st.dataframe(history_df, use_container_width=True, height=150)
+        
+        # 상태에 따른 색상 스타일링
+        def color_status(val):
+            if val == "완료":
+                return 'background-color: #d1fae5; color: #065f46'
+            elif val == "진행중":
+                return 'background-color: #fef3c7; color: #92400e'
+            else:
+                return 'background-color: #fee2e2; color: #991b1b'
+        
+        styled_history_df = history_df.style.applymap(color_status, subset=['상태'])
+        st.dataframe(styled_history_df, use_container_width=True, height=200)
 
     with tabs[5]:  # 설정
         st.markdown('<div class="main-header no-translate" translate="no">⚙️ 설정</div>', unsafe_allow_html=True)
@@ -4198,7 +4991,14 @@ def main():
                 if st.button("데이터 초기화", key="reset_data"):
                     st.warning("모든 데이터가 초기화됩니다. 계속하시겠습니까?")
                     if st.button("확인", key="confirm_reset"):
-                        st.success("데이터가 초기화되었습니다.")
+                        try:
+                            response = requests.post("http://localhost:8000/clear_data", timeout=5)
+                            if response.status_code == 200:
+                                st.success("모든 데이터가 초기화되었습니다.")
+                            else:
+                                st.error("데이터 초기화 실패")
+                        except Exception as e:
+                            st.error(f"API 서버 연결 실패: {e}")
             
             if st.button("데이터 설정 저장", key="save_data_settings"):
                 st.success("데이터 설정이 저장되었습니다.")
@@ -4669,5 +5469,6 @@ def main():
     </script>
     """, unsafe_allow_html=True)
 
+# 모듈로 사용할 때만 실행
 if __name__ == "__main__":
     main()

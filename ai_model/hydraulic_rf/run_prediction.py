@@ -67,11 +67,11 @@ def get_real_sample_data():
         sample_idx = np.random.randint(0, len(df))
         sample_data = df.iloc[sample_idx][features].to_dict()
         
-        print(f"실제 데이터에서 샘플 추출 (인덱스: {sample_idx})")
+        # 실제 데이터에서 샘플 추출 (인덱스: {sample_idx})
         return sample_data
         
     except Exception as e:
-        print(f"실제 데이터 읽기 실패: {e}")
+        # 실제 데이터 읽기 실패: {e}
         # 폴백: 기본값 사용
         return {
             'PS1_max': 190.9,
@@ -95,10 +95,10 @@ def get_sample_data():
     """샘플 데이터 선택 (정상 상태 우선)"""
     # 80% 확률로 정상 상태 데이터 생성
     if np.random.random() < 0.8:
-        print("정상 상태 합성 데이터 생성")
+        # 정상 상태 합성 데이터 생성
         return generate_normal_sample_data()
     else:
-        print("실제 데이터셋에서 샘플 추출")
+        # 실제 데이터셋에서 샘플 추출
         return get_real_sample_data()
 
 def run_hydraulic_prediction():
@@ -133,14 +133,14 @@ def run_hydraulic_prediction():
             adjusted_confidence = adjusted_probabilities['normal']  # 정상일 때는 정상 확률을 신뢰도로
             adjusted_status = "Normal" if adjusted_prediction == 0 else "Abnormal Detected"
             
-            print(f"실제 운영 환경 반영: 정상 상태로 조정 (원본: {'이상' if original_prediction == 1 else '정상'})")
+            # 실제 운영 환경 반영: 정상 상태로 조정 (원본: {'이상' if original_prediction == 1 else '정상'})
         else:
             # 20% 확률로 원본 예측 유지
             adjusted_prediction = original_prediction
             adjusted_probabilities = original_probabilities
             adjusted_confidence = result.get('confidence', 0.0)
             adjusted_status = result.get('status', 'Unknown')
-            print(f"원본 예측 유지: {'이상' if original_prediction == 1 else '정상'}")
+            # 원본 예측 유지: {'이상' if original_prediction == 1 else '정상'}
         
         # 5. 결과 구성
         prediction_result = {
@@ -161,12 +161,11 @@ def run_hydraulic_prediction():
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(prediction_result, f, ensure_ascii=False, indent=2)
         
-        print(f"✅ 예측 완료: {output_path}")
-        print(f"예측 결과: {adjusted_status}")
-        if 'probabilities' in adjusted_probabilities:
-            print(f"정상 확률: {adjusted_probabilities['normal']:.2%}")
-            print(f"이상 확률: {adjusted_probabilities['abnormal']:.2%}")
-            print(f"신뢰도: {adjusted_confidence:.2%}")
+        # 예측 완료: {output_path}
+        # 예측 결과: {adjusted_status}
+        # 정상 확률: {adjusted_probabilities.get('normal', 0):.2%}
+        # 이상 확률: {adjusted_probabilities.get('abnormal', 0):.2%}
+        # 신뢰도: {adjusted_confidence:.2%}
         
         return prediction_result
         
@@ -183,8 +182,9 @@ def run_hydraulic_prediction():
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(error_result, f, ensure_ascii=False, indent=2)
         
-        print(f"❌ 예측 실패: {e}")
+        # 예측 실패: {e}
         return error_result
 
+# 모듈로 사용할 때만 실행
 if __name__ == "__main__":
     run_hydraulic_prediction() 

@@ -302,58 +302,7 @@ class FaultPredictor:
 
 
 # ===================================================================
-# 3. 사용 예시 
-# ===================================================================
-
-if __name__ == "__main__":
-    
-    # Step 1: 초기화
-    predictor = FaultPredictor()
-    
-    # Step 2: 모델 로드
-    predictor.load_model(
-        model_path="trained_model.pth",
-        scaler_path="scaler.pkl"  # 없으면 None
-    )
-    
-    # Step 3: 예측 실행
-    sensor_data = np.random.randn(60, 4)  # 실제로는 실시간 센서 데이터
-    result = predictor.predict(sensor_data)
-    
-    print("=== 예측 결과 ===")
-    print(f"예측 클래스: {result['predicted_class_description']}")
-    print(f"신뢰도: {result['confidence']:.2%}")
-    print(f"정상 여부: {'정상' if result['is_normal'] else '이상'}")
-    
-    '''배치 예측 (여러 시퀀스 동시 처리)
-    batch_data = np.random.randn(5, 60, 4)  # 5개 시퀀스
-    batch_result = predictor.predict(batch_data)
-    
-    print("\n=== 배치 예측 결과 ===")
-    for i, res in enumerate(batch_result['batch_results']):
-        print(f"시퀀스 {i+1}: {res['predicted_class_name']} (신뢰도: {res['confidence']:.2%})")
-    '''
-
-    #확률이 극단적일 때 Temperature Scaling
-    if result['confidence'] > 0.95:
-        print("\n=== Temperature Scaling 적용 ===")
-        smooth_result = predictor.predict(sensor_data, temperature_scaling=2.0)
-        print(f"조정된 신뢰도: {smooth_result['confidence']:.2%}")
-
-
-
-    # 간단한 경고
-    result = predictor.predict(sensor_data)
-
-    # 경고 레벨 계산 (이것만 추가하면 됨!)
-    alert = predictor.determine_alert_level(result['probabilities'])
-
-    # 사용
-    print(f"상태: {alert['alert_level']}")
-    print(f"조치: {alert['recommended_action']}")
-
-# ===================================================================
-# 4. 설치 및 사용 가이드
+# 3. 사용 가이드
 # ===================================================================
 
 """
@@ -362,14 +311,14 @@ if __name__ == "__main__":
 1. 필요한 파일:
    - trained_model.pth  (모델 가중치)
    - scaler.pkl         (정규화 스케일러, 선택사항)
-   - model.py           (이 파일)
+   - SVDL_shin.py       (이 파일)
 
 2. 라이브러리 설치:
    pip install torch scikit-learn numpy pandas joblib
 
 3. 기본 사용법:
    ```python
-   from model import FaultPredictor
+   from SVDL_shin import FaultPredictor
    
    # 초기화 및 모델 로드
    predictor = FaultPredictor()

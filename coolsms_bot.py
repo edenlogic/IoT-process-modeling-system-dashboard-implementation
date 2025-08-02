@@ -31,7 +31,7 @@ import uvicorn
 # 로깅 설정
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.DEBUG  # INFO를 DEBUG로 변경하여 디버그 로그 활성화
+    level=logging.INFO  # 운영 환경에서는 INFO 레벨 사용
 )
 logger = logging.getLogger(__name__)
 
@@ -297,7 +297,7 @@ class FastAPIMonitor:
                         if recent_alerts:
                             logger.info(f"[API 응답] 최근 알림 {len(recent_alerts)}개 발견")
                         else:
-                            logger.debug(f"[API 응답] 총 {len(api_alerts)}개 알람 수신 (모두 이전 알림)")
+                            pass  # 총 {len(api_alerts)}개 알람 수신 (모두 이전 알림)
                     
                     for api_alert in api_alerts:
                         alert_time_str = api_alert.get('timestamp', '')
@@ -324,8 +324,7 @@ class FastAPIMonitor:
                         # ===== severity 필터링 전 로그 추가 =====
                         current_severity = api_alert.get('severity')
                         if current_severity != 'error':
-                            logger.debug(f"⏭️ severity={current_severity} 알람 스킵: "
-                                    f"{api_alert.get('equipment')}/{api_alert.get('sensor_type')}")
+                            pass  # severity={current_severity} 알람 스킵
                             continue
                         
                         # ===== error 알람만 통과했을 때 로그 =====
@@ -523,5 +522,6 @@ async def main():
     finally:
         monitor.running = False
 
+# 모듈로 사용할 때만 실행
 if __name__ == "__main__":
     asyncio.run(main())

@@ -16,7 +16,8 @@ try:
     GEMINI_AVAILABLE = True
 except ImportError:
     GEMINI_AVAILABLE = False
-    print("⚠️ Google Gemini가 설치되지 않았습니다. pip install google-generativeai")
+    # Google Gemini 설치 필요 시 주석 해제
+# print("⚠️ Google Gemini가 설치되지 않았습니다. pip install google-generativeai")
 
 # 환경변수 로드
 load_dotenv()
@@ -291,7 +292,7 @@ class ResponseParser:
             elif any(word in content.lower() for word in ["바이패스", "bypass", "계속", "무시"]):
                 result["action"] = "bypass"
         
-        logger.debug(f"파싱 결과: {result}")
+        # 파싱 결과: {result}
         return result
 
 # ===== 메인 AI 서비스 클래스 =====

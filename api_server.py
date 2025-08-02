@@ -26,7 +26,8 @@ try:
     COOLSMS_AVAILABLE = True
 except ImportError:
     COOLSMS_AVAILABLE = False
-    print("⚠️ CoolSMS SDK가 설치되지 않았습니다. SMS 기능이 제한됩니다.")
+    # CoolSMS SDK 설치 필요 시 주석 해제
+# print("⚠️ CoolSMS SDK가 설치되지 않았습니다. SMS 기능이 제한됩니다.")
 
 # 로거 설정 추가
 logging.basicConfig(level=logging.INFO)
@@ -45,11 +46,11 @@ PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://localhost:8000")
 if COOLSMS_AVAILABLE and all([os.getenv("COOLSMS_API_KEY"), os.getenv("COOLSMS_API_SECRET"), os.getenv("COOLSMS_SENDER")]):
     coolsms_api = Message(os.getenv("COOLSMS_API_KEY"), os.getenv("COOLSMS_API_SECRET"))
     coolsms_sender = os.getenv("COOLSMS_SENDER")
-    print(f"✅ CoolSMS 초기화 완료 - 발신번호: {coolsms_sender}")
+    logger.info(f"✅ CoolSMS 초기화 완료 - 발신번호: {coolsms_sender}")
 else:
     coolsms_api = None
     coolsms_sender = None
-    print("❌ CoolSMS 설정이 완료되지 않았습니다. .env 파일을 확인하세요.")
+    logger.warning("❌ CoolSMS 설정이 완료되지 않았습니다. .env 파일을 확인하세요.")
 
 COOLDOWN_PERIODS = {
     'error': timedelta(seconds=int(os.getenv("ERROR_COOLDOWN_SECONDS", "30"))),
@@ -936,21 +937,21 @@ def clear_data():
     try:
         # 모든 테이블 데이터 완전 삭제 (순서 중요)
         c.execute('DELETE FROM alerts')  # 알림 먼저 삭제
-        print(f"[API] 알림 데이터 삭제 완료")
+        logger.info(f"[API] 알림 데이터 삭제 완료")
         c.execute('DELETE FROM sensor_data')  # 센서 데이터 삭제
-        print(f"[API] 센서 데이터 삭제 완료")
+        logger.info(f"[API] 센서 데이터 삭제 완료")
         c.execute('DELETE FROM quality_trend')
         c.execute('DELETE FROM production_kpi')
         
         # 사용자 관리 관련 테이블 삭제
         c.execute('DELETE FROM sms_history')  # SMS 이력 삭제
-        print(f"[API] SMS 이력 삭제 완료")
+        logger.info(f"[API] SMS 이력 삭제 완료")
         c.execute('DELETE FROM alert_subscriptions')  # 알림 구독 설정 삭제
-        print(f"[API] 알림 구독 설정 삭제 완료")
+        logger.info(f"[API] 알림 구독 설정 삭제 완료")
         c.execute('DELETE FROM equipment_users')  # 설비별 사용자 할당 삭제
-        print(f"[API] 설비별 사용자 할당 삭제 완료")
+        logger.info(f"[API] 설비별 사용자 할당 삭제 완료")
         c.execute('DELETE FROM users')  # 사용자 삭제
-        print(f"[API] 사용자 삭제 완료")
+        logger.info(f"[API] 사용자 삭제 완료")
         
         # 설비 상태도 완전히 삭제 후 재생성
         c.execute('DELETE FROM equipment_status')
@@ -987,7 +988,7 @@ def clear_data():
         ]
         c.executemany('''INSERT INTO equipment_status 
             (id, name, status, efficiency, type, last_maintenance) VALUES (?, ?, ?, ?, ?, ?)''', initial_equipment)
-        print(f"[API] 설비 데이터 삽입 완료: {len(initial_equipment)}개")
+        logger.info(f"[API] 설비 데이터 삽입 완료: {len(initial_equipment)}개")
         
         # 테이블 재생성 (스키마 변경 대응)
         c.execute('DROP TABLE IF EXISTS quality_trend')
@@ -1005,7 +1006,7 @@ def clear_data():
         # 설비 개수 확인
         c.execute('SELECT COUNT(*) FROM equipment_status')
         equipment_count = c.fetchone()[0]
-        print(f"[API] 최종 설비 개수 확인: {equipment_count}개")
+        logger.info(f"[API] 최종 설비 개수 확인: {equipment_count}개")
         
         # 메모리 기반 데이터도 초기화
         global action_history, alert_history, recent_raw_alerts, action_tokens, alert_status_memory
@@ -1019,6 +1020,90 @@ def clear_data():
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=f"데이터베이스 초기화 실패: {str(e)}")
+    finally:
+        conn.close()
+
+@app.post("/clear_sensor_data")
+def clear_sensor_data():
+    """센서 데이터와 알림만 삭제하고 사용자 데이터는 보존"""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    try:
+        # 센서 데이터와 알림만 삭제 (사용자 데이터는 보존)
+        c.execute('DELETE FROM alerts')  # 알림 먼저 삭제
+        logger.info(f"[API] 알림 데이터 삭제 완료")
+        c.execute('DELETE FROM sensor_data')  # 센서 데이터 삭제
+        logger.info(f"[API] 센서 데이터 삭제 완료")
+        c.execute('DELETE FROM quality_trend')
+        c.execute('DELETE FROM production_kpi')
+        
+        # 설비 상태도 완전히 삭제 후 재생성
+        c.execute('DELETE FROM equipment_status')
+        
+        # 설비 상태 테이블 재생성 및 초기 데이터 삽입
+        c.execute('DROP TABLE IF EXISTS equipment_status')
+        c.execute('''CREATE TABLE equipment_status (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            status TEXT NOT NULL,
+            efficiency REAL NOT NULL,
+            type TEXT NOT NULL,
+            last_maintenance TEXT NOT NULL
+        )''')
+        
+        # 초기 설비 데이터 삽입 (시뮬레이터와 일치)
+        initial_equipment = [
+            ("press_001", "프레스기 #1", "정상", 95.0, "프레스", "2024-01-15"),
+            ("press_002", "프레스기 #2", "정상", 95.0, "프레스", "2024-01-10"),
+            ("press_003", "프레스기 #3", "정상", 95.0, "프레스", "2024-01-16"),
+            ("press_004", "프레스기 #4", "정상", 95.0, "프레스", "2024-01-17"),
+            ("weld_001", "용접기 #1", "정상", 95.0, "용접", "2024-01-12"),
+            ("weld_002", "용접기 #2", "정상", 95.0, "용접", "2024-01-13"),
+            ("weld_003", "용접기 #3", "정상", 95.0, "용접", "2024-01-11"),
+            ("weld_004", "용접기 #4", "정상", 95.0, "용접", "2024-01-14"),
+            ("assemble_001", "조립기 #1", "정상", 95.0, "조립", "2024-01-14"),
+            ("assemble_002", "조립기 #2", "정상", 95.0, "조립", "2024-01-17"),
+            ("assemble_003", "조립기 #3", "정상", 95.0, "조립", "2024-01-18"),
+            ("inspect_001", "검사기 #1", "정상", 95.0, "검사", "2024-01-05"),
+            ("inspect_002", "검사기 #2", "정상", 95.0, "검사", "2024-01-06"),
+            ("inspect_003", "검사기 #3", "정상", 95.0, "검사", "2024-01-07"),
+            ("pack_001", "포장기 #1", "정상", 95.0, "포장", "2024-01-19"),
+            ("pack_002", "포장기 #2", "정상", 95.0, "포장", "2024-01-20")
+        ]
+        c.executemany('''INSERT INTO equipment_status 
+            (id, name, status, efficiency, type, last_maintenance) VALUES (?, ?, ?, ?, ?, ?)''', initial_equipment)
+        logger.info(f"[API] 설비 데이터 삽입 완료: {len(initial_equipment)}개")
+        
+        # 테이블 재생성 (스키마 변경 대응)
+        c.execute('DROP TABLE IF EXISTS quality_trend')
+        c.execute('''CREATE TABLE quality_trend (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            days TEXT,
+            quality_rates TEXT,
+            defect_rates TEXT,
+            production_volume TEXT,
+            timestamp TEXT DEFAULT CURRENT_TIMESTAMP
+        )''')
+        
+        conn.commit()
+        
+        # 설비 개수 확인
+        c.execute('SELECT COUNT(*) FROM equipment_status')
+        equipment_count = c.fetchone()[0]
+        logger.info(f"[API] 최종 설비 개수 확인: {equipment_count}개")
+        
+        # 메모리 기반 데이터도 초기화
+        global action_history, alert_history, recent_raw_alerts, action_tokens, alert_status_memory
+        action_history = []
+        alert_history = {}
+        recent_raw_alerts = []
+        action_tokens = {}
+        alert_status_memory = {}
+        
+        return {"status": "ok", "message": "센서 데이터가 초기화되었습니다. 사용자 데이터는 보존됩니다."}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"센서 데이터 초기화 실패: {str(e)}")
     finally:
         conn.close()
 
@@ -1833,5 +1918,6 @@ def get_link_stats():
         "timestamp": datetime.now().isoformat()
     }
 
+# 모듈로 사용할 때만 실행
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

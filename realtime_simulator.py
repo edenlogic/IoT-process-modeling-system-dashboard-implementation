@@ -425,7 +425,7 @@ class MultiEquipmentSimulator:
         logger.info("시뮬레이터 중지 요청")
 
 
-# 메인 실행
+# 모듈로 사용할 때만 실행
 if __name__ == "__main__":
     simulator = MultiEquipmentSimulator()
     

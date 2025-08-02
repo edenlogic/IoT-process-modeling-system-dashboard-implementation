@@ -90,7 +90,7 @@ def run_abnormal_detection():
             adjusted_confidence = adjusted_probabilities[adjusted_predicted_class]
             adjusted_is_normal = adjusted_predicted_class == 'normal'
             
-            print(f"실제 운영 환경 반영: 정상 상태로 조정 (원본: {result['predicted_class_description']})")
+            # 실제 운영 환경 반영: 정상 상태로 조정 (원본: {result['predicted_class_description']})
         else:
             # 20% 확률로 원본 예측 유지
             adjusted_probabilities = original_probabilities
@@ -99,7 +99,7 @@ def run_abnormal_detection():
             adjusted_predicted_class_description = result['predicted_class_description']
             adjusted_confidence = result['confidence']
             adjusted_is_normal = result['is_normal']
-            print(f"원본 예측 유지: {result['predicted_class_description']}")
+            # 원본 예측 유지: {result['predicted_class_description']}
         
         # 6. 경고 레벨 계산
         alert = predictor.determine_alert_level(adjusted_probabilities)
@@ -126,10 +126,10 @@ def run_abnormal_detection():
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(prediction_result, f, ensure_ascii=False, indent=2)
         
-        print(f"✅ 예측 완료: {output_path}")
-        print(f"예측 결과: {result['predicted_class_description']}")
-        print(f"신뢰도: {result['confidence']:.2%}")
-        print(f"경고 레벨: {alert['alert_level']}")
+        # 예측 완료: {output_path}
+        # 예측 결과: {result['predicted_class_description']}
+        # 신뢰도: {result['confidence']:.2%}
+        # 경고 레벨: {alert['alert_level']}
         
         return prediction_result
         
@@ -146,8 +146,9 @@ def run_abnormal_detection():
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(error_result, f, ensure_ascii=False, indent=2)
         
-        print(f"❌ 예측 실패: {e}")
+        # 예측 실패: {e}
         return error_result
 
+# 모듈로 사용할 때만 실행
 if __name__ == "__main__":
     run_abnormal_detection() 
