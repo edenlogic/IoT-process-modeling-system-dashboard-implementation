@@ -1,6 +1,7 @@
 import os
 import sqlite3
-from fastapi import FastAPI, HTTPException, Request, Query
+import json
+from fastapi import FastAPI, HTTPException, Request, Query, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
@@ -12,10 +13,20 @@ import uuid
 from dataclasses import dataclass, field
 import logging
 import re
+import requests
 
 # dotenv 추가
 from dotenv import load_dotenv
 load_dotenv()
+
+# CoolSMS SDK 임포트 추가
+try:
+    from sdk.api.message import Message
+    from sdk.exceptions import CoolsmsException
+    COOLSMS_AVAILABLE = True
+except ImportError:
+    COOLSMS_AVAILABLE = False
+    print("⚠️ CoolSMS SDK가 설치되지 않았습니다. SMS 기능이 제한됩니다.")
 
 # 로거 설정 추가
 logging.basicConfig(level=logging.INFO)
@@ -26,6 +37,20 @@ DDL_PATH = 'posco_iot_DDL.sql'
 
 # 환경변수 설정 추가
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://localhost:8000")
+
+# 관리자 번호는 이제 데이터베이스에서 관리됨 (더 이상 .env 사용 안함)
+# ADMIN_PHONE_NUMBERS = [num.strip() for num in os.getenv("ADMIN_PHONE_NUMBERS", "").split(",") if num.strip()]
+
+# CoolSMS 서비스 초기화
+if COOLSMS_AVAILABLE and all([os.getenv("COOLSMS_API_KEY"), os.getenv("COOLSMS_API_SECRET"), os.getenv("COOLSMS_SENDER")]):
+    coolsms_api = Message(os.getenv("COOLSMS_API_KEY"), os.getenv("COOLSMS_API_SECRET"))
+    coolsms_sender = os.getenv("COOLSMS_SENDER")
+    print(f"✅ CoolSMS 초기화 완료 - 발신번호: {coolsms_sender}")
+else:
+    coolsms_api = None
+    coolsms_sender = None
+    print("❌ CoolSMS 설정이 완료되지 않았습니다. .env 파일을 확인하세요.")
+
 COOLDOWN_PERIODS = {
     'error': timedelta(seconds=int(os.getenv("ERROR_COOLDOWN_SECONDS", "30"))),
     'warning': timedelta(seconds=int(os.getenv("WARNING_COOLDOWN_SECONDS", "60"))),
@@ -75,6 +100,37 @@ class EquipmentStatus(BaseModel):
     type: str
     last_maintenance: str
 
+# 사용자 관리 모델 추가
+class UserCreate(BaseModel):
+    phone_number: str
+    name: str
+    department: Optional[str] = None
+    role: str = "user"
+
+class UserUpdate(BaseModel):
+    name: Optional[str] = None
+    department: Optional[str] = None
+    role: Optional[str] = None
+    is_active: Optional[bool] = None
+
+class AlertSubscription(BaseModel):
+    user_id: int
+    equipment: Optional[str] = None
+    sensor_type: Optional[str] = None
+    severity: str
+    is_active: bool = True
+
+# 설비별 사용자 관리 모델 추가
+class EquipmentUserAssignment(BaseModel):
+    equipment_id: str
+    user_id: int
+    role: str = "담당자"  # 담당자, 관리자, 감시자
+    is_primary: bool = False
+
+class EquipmentUserUpdate(BaseModel):
+    role: Optional[str] = None
+    is_primary: Optional[bool] = None
+
 @dataclass
 class AlertHistory:
     """알림 이력 관리 (중복 방지용)"""
@@ -109,6 +165,307 @@ def generate_action_link(alert_data: dict) -> str:
     }
     
     return f"{PUBLIC_BASE_URL}/action/{token}"
+
+def send_sms_alert(alert_data: dict) -> bool:
+    """SMS 알림 전송 (기업용 - 동적 사용자 관리)"""
+    if not coolsms_api or not coolsms_sender:
+        logger.warning("❌ CoolSMS가 초기화되지 않았습니다.")
+        return False
+
+    try:
+        # 알림 구독자 조회
+        subscribers = get_alert_subscribers(alert_data)
+        if not subscribers:
+            logger.info(f"⚠️ {alert_data['severity']} 알림 구독자가 없습니다.")
+            return False
+        
+        # 액션 링크 생성
+        action_link = generate_action_link(alert_data)
+        
+        # 메시지 포맷팅 (간단한 포맷)
+        sensor_map = {
+            'temperature': '온도',
+            'pressure': '압력', 
+            'vibration': '진동',
+            'power': '전력',
+            'current': '전류',
+            'voltage': '전압'
+        }
+        sensor_ko = sensor_map.get(alert_data.get('sensor_type', ''), alert_data.get('sensor_type', ''))
+        
+        # 발생 시간 포맷팅
+        current_time = datetime.now().strftime('%H:%M:%S')
+        
+        # 심각도 코드
+        severity_code = {
+            'error': 'HH',
+            'warning': 'H',
+            'info': 'L'
+        }.get(alert_data['severity'], 'HH')
+        
+        # 메시지 구성 (원하는 포맷)
+        message = f"{current_time}\n"
+        message += f"{alert_data['equipment']} {severity_code}\n"
+        message += f"{sensor_ko}: {alert_data.get('value', 'N/A')} > {alert_data.get('threshold', 'N/A')}(임계값)\n"
+        message += f"{action_link}"
+        
+        # TinyURL로 링크 단축
+        try:
+            short_url = requests.post('http://tinyurl.com/api-create.php', 
+                                    data={'url': action_link}, timeout=5).text
+            if short_url.startswith('http'):
+                message = message.replace(action_link, short_url)
+        except:
+            pass  # 단축 실패 시 원본 링크 사용
+        
+        success_count = 0
+        for subscriber in subscribers:
+            try:
+                params = {
+                    'type': 'SMS',
+                    'to': subscriber['phone_number'],
+                    'from': coolsms_sender,
+                    'text': message
+                }
+                
+                response = coolsms_api.send(params)
+                if response.get('success_count', 0) > 0:
+                    # SMS 이력 저장
+                    save_sms_history(subscriber['id'], alert_data.get('id'), 
+                                   subscriber['phone_number'], message)
+                    success_count += 1
+                    logger.info(f"✅ SMS 전송 성공: {subscriber['phone_number']}")
+                else:
+                    logger.error(f"❌ SMS 전송 실패: {subscriber['phone_number']} - {response}")
+                    
+            except CoolsmsException as e:
+                logger.error(f"❌ CoolSMS 오류: {subscriber['phone_number']} - {e}")
+            except Exception as e:
+                logger.error(f"❌ SMS 전송 오류: {subscriber['phone_number']} - {e}")
+        
+        logger.info(f"📱 SMS 전송 완료: {success_count}/{len(subscribers)} 성공")
+        return success_count > 0
+        
+    except Exception as e:
+        logger.error(f"❌ SMS 알림 전송 오류: {e}")
+        return False
+
+def get_alert_subscribers(alert_data: dict) -> List[Dict]:
+    """알림 구독자 조회 (설비별 사용자 관리 기반)"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # 1. 해당 설비에 할당된 사용자들 조회 (우선순위 1)
+        equipment_users_query = """
+        SELECT DISTINCT u.id, u.phone_number, u.name, u.department, eu.role as equipment_role, eu.is_primary
+        FROM users u
+        JOIN equipment_users eu ON u.id = eu.user_id
+        WHERE u.is_active = 1 
+        AND eu.equipment_id = ?
+        ORDER BY eu.is_primary DESC, u.name ASC
+        """
+        
+        cursor.execute(equipment_users_query, (alert_data['equipment'],))
+        equipment_users = []
+        for row in cursor.fetchall():
+            equipment_users.append({
+                'id': row[0],
+                'phone_number': row[1],
+                'name': row[2],
+                'department': row[3],
+                'equipment_role': row[4],
+                'is_primary': bool(row[5]),
+                'source': 'equipment_assignment'
+            })
+        
+        # 2. 일반 알림 구독 설정에 맞는 사용자들 조회 (우선순위 2)
+        subscription_query = """
+        SELECT DISTINCT u.id, u.phone_number, u.name, u.department
+        FROM users u
+        JOIN alert_subscriptions s ON u.id = s.user_id
+        WHERE u.is_active = 1 
+        AND s.is_active = 1
+        AND s.severity = ?
+        AND (s.equipment IS NULL OR s.equipment = ?)
+        AND (s.sensor_type IS NULL OR s.sensor_type = ?)
+        AND u.id NOT IN (
+            SELECT DISTINCT eu.user_id 
+            FROM equipment_users eu 
+            WHERE eu.equipment_id = ?
+        )
+        """
+        
+        cursor.execute(subscription_query, (
+            alert_data['severity'],
+            alert_data['equipment'],
+            alert_data.get('sensor_type', ''),
+            alert_data['equipment']
+        ))
+        
+        subscription_users = []
+        for row in cursor.fetchall():
+            subscription_users.append({
+                'id': row[0],
+                'phone_number': row[1],
+                'name': row[2],
+                'department': row[3],
+                'source': 'subscription'
+            })
+        
+        conn.close()
+        
+        # 설비 할당 사용자를 우선으로 하고, 중복 제거
+        all_subscribers = equipment_users + subscription_users
+        unique_subscribers = []
+        seen_ids = set()
+        
+        for subscriber in all_subscribers:
+            if subscriber['id'] not in seen_ids:
+                unique_subscribers.append(subscriber)
+                seen_ids.add(subscriber['id'])
+        
+        logger.info(f"📱 알림 구독자 조회 완료: 설비할당 {len(equipment_users)}명, 구독설정 {len(subscription_users)}명, 총 {len(unique_subscribers)}명")
+        return unique_subscribers
+        
+    except Exception as e:
+        logger.error(f"❌ 구독자 조회 오류: {e}")
+        return []
+
+def save_sms_history(user_id: int, alert_id: Optional[int], phone_number: str, message: str):
+    """SMS 전송 이력 저장"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            INSERT INTO sms_history (user_id, alert_id, phone_number, message, status)
+            VALUES (?, ?, ?, ?, 'sent')
+        """, (user_id, alert_id, phone_number, message))
+        
+        conn.commit()
+        conn.close()
+        
+    except Exception as e:
+        logger.error(f"❌ SMS 이력 저장 오류: {e}")
+
+def get_users_from_db() -> List[Dict]:
+    """데이터베이스에서 사용자 목록 조회"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT id, phone_number, name, department, role, is_active, created_at
+            FROM users
+            ORDER BY created_at DESC
+        """)
+        
+        users = []
+        for row in cursor.fetchall():
+            users.append({
+                'id': row[0],
+                'phone_number': row[1],
+                'name': row[2],
+                'department': row[3],
+                'role': row[4],
+                'is_active': bool(row[5]),
+                'created_at': row[6]
+            })
+        
+        conn.close()
+        return users
+        
+    except Exception as e:
+        logger.error(f"❌ 사용자 조회 오류: {e}")
+        return []
+
+def get_equipment_users_from_db(equipment_id: Optional[str] = None) -> List[Dict]:
+    """설비별 사용자 할당 정보 조회"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        if equipment_id:
+            query = """
+            SELECT eu.id, eu.equipment_id, eu.user_id, eu.role, eu.is_primary, eu.created_at,
+                   u.name, u.phone_number, u.department, u.role as user_role
+            FROM equipment_users eu
+            JOIN users u ON eu.user_id = u.id
+            WHERE eu.equipment_id = ?
+            ORDER BY eu.is_primary DESC, eu.created_at ASC
+            """
+            cursor.execute(query, (equipment_id,))
+        else:
+            query = """
+            SELECT eu.id, eu.equipment_id, eu.user_id, eu.role, eu.is_primary, eu.created_at,
+                   u.name, u.phone_number, u.department, u.role as user_role
+            FROM equipment_users eu
+            JOIN users u ON eu.user_id = u.id
+            ORDER BY eu.equipment_id, eu.is_primary DESC, eu.created_at ASC
+            """
+            cursor.execute(query)
+        
+        assignments = []
+        for row in cursor.fetchall():
+            assignments.append({
+                'id': row[0],
+                'equipment_id': row[1],
+                'user_id': row[2],
+                'role': row[3],
+                'is_primary': bool(row[4]),
+                'created_at': row[5],
+                'user_name': row[6],
+                'phone_number': row[7],
+                'department': row[8],
+                'user_role': row[9]
+            })
+        
+        conn.close()
+        return assignments
+        
+    except Exception as e:
+        logger.error(f"❌ 설비별 사용자 조회 오류: {e}")
+        return []
+
+def get_equipment_users_by_equipment(equipment_id: str) -> List[Dict]:
+    """특정 설비에 할당된 사용자 목록 조회"""
+    return get_equipment_users_from_db(equipment_id)
+
+def get_equipment_users_by_user(user_id: int) -> List[Dict]:
+    """특정 사용자가 담당하는 설비 목록 조회"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        query = """
+        SELECT eu.id, eu.equipment_id, eu.role, eu.is_primary, eu.created_at,
+               es.name as equipment_name, es.type as equipment_type
+        FROM equipment_users eu
+        JOIN equipment_status es ON eu.equipment_id = es.id
+        WHERE eu.user_id = ?
+        ORDER BY eu.is_primary DESC, es.name ASC
+        """
+        cursor.execute(query, (user_id,))
+        
+        assignments = []
+        for row in cursor.fetchall():
+            assignments.append({
+                'id': row[0],
+                'equipment_id': row[1],
+                'role': row[2],
+                'is_primary': bool(row[3]),
+                'created_at': row[4],
+                'equipment_name': row[5],
+                'equipment_type': row[6]
+            })
+        
+        conn.close()
+        return assignments
+        
+    except Exception as e:
+        logger.error(f"❌ 사용자별 설비 조회 오류: {e}")
+        return []
 
 def check_duplicate_alert(alert_data: Dict) -> Tuple[bool, str]:
     """알림 중복 체크 - True면 중복(스킵), False면 신규(발송)"""
@@ -215,6 +572,9 @@ def startup():
     logger.info(f"ERROR_COOLDOWN: {COOLDOWN_PERIODS['error'].seconds}초")
     logger.info(f"WARNING_COOLDOWN: {COOLDOWN_PERIODS['warning'].seconds}초")
     logger.info(f"INFO_COOLDOWN: {COOLDOWN_PERIODS['info'].seconds}초")
+    logger.info(f"📱 CoolSMS 상태: {'활성화' if coolsms_api else '비활성화'}")
+    if coolsms_api:
+        logger.info(f"📞 발신번호: {coolsms_sender}")
     logger.info("="*50)
 
 # 센서 데이터 조회 (시뮬레이터/대시보드)
@@ -296,7 +656,7 @@ def get_alerts(equipment: Optional[str] = None, severity: Optional[str] = None, 
 
 # 알림 데이터 저장 (시뮬레이터/AI) - 수정됨
 @app.post("/alerts")
-def post_alert(data: AlertData):
+def post_alert(data: AlertData, background_tasks: BackgroundTasks):
     logger.info(f"[알람 수신] equipment={data.equipment}, sensor={data.sensor_type}, "
                 f"severity={data.severity}, value={data.value}, threshold={data.threshold}")
     
@@ -320,12 +680,22 @@ def post_alert(data: AlertData):
     c.execute('''INSERT INTO alerts (equipment, sensor_type, value, threshold, severity, timestamp, message) \
         VALUES (?, ?, ?, ?, ?, ?, ?)''',
         (data.equipment, data.sensor_type, data.value, data.threshold, data.severity, normalized_timestamp, data.message))
+    
+    # 저장된 알림의 ID 가져오기
+    alert_id = c.lastrowid
     conn.commit()
     conn.close()
     
     # 메모리에 status 저장
     alert_key = f"{data.equipment}_{data.sensor_type}_{normalized_timestamp}"
     alert_status_memory[alert_key] = "미처리"
+    
+    # error severity일 때만 SMS 알림 전송
+    if data.severity == "error":
+        logger.info(f"[SMS 알림] error severity 감지 - SMS 전송 시작")
+        # alert_dict에 id 추가
+        alert_dict['id'] = alert_id
+        background_tasks.add_task(send_sms_alert, alert_dict)
     
     return {"status": "ok", "message": "알림이 저장되었습니다.", "timestamp": normalized_timestamp}
 
@@ -572,6 +942,16 @@ def clear_data():
         c.execute('DELETE FROM quality_trend')
         c.execute('DELETE FROM production_kpi')
         
+        # 사용자 관리 관련 테이블 삭제
+        c.execute('DELETE FROM sms_history')  # SMS 이력 삭제
+        print(f"[API] SMS 이력 삭제 완료")
+        c.execute('DELETE FROM alert_subscriptions')  # 알림 구독 설정 삭제
+        print(f"[API] 알림 구독 설정 삭제 완료")
+        c.execute('DELETE FROM equipment_users')  # 설비별 사용자 할당 삭제
+        print(f"[API] 설비별 사용자 할당 삭제 완료")
+        c.execute('DELETE FROM users')  # 사용자 삭제
+        print(f"[API] 사용자 삭제 완료")
+        
         # 설비 상태도 완전히 삭제 후 재생성
         c.execute('DELETE FROM equipment_status')
         
@@ -647,156 +1027,471 @@ def clear_data():
 def health_check():
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
-# 대시보드용 통합 엔드포인트
-@app.get("/dashboard/data")
-async def get_dashboard_data():
-    """대시보드용 모든 데이터를 한 번에 반환"""
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        
-        # 센서 데이터 조회 (최근 100개)
-        cursor.execute("""
-            SELECT equipment, sensor_type, value, timestamp 
-            FROM sensor_data 
-            ORDER BY timestamp DESC 
-            LIMIT 100
-        """)
-        sensor_results = cursor.fetchall()
-        
-        # 설비 상태 조회
-        cursor.execute("SELECT id, name, status, efficiency, type, last_maintenance FROM equipment_status")
-        equipment_results = cursor.fetchall()
-        
-        # 알림 데이터 조회 (최근 50개)
-        cursor.execute("SELECT equipment, severity, message, timestamp FROM alerts ORDER BY timestamp DESC LIMIT 50")
-        alerts_results = cursor.fetchall()
-        
-        conn.close()
-        
-        # 센서 데이터 변환
-        sensor_data = {'temperature': [], 'pressure': [], 'vibration': []}
-        for row in sensor_results:
-            equipment, sensor_type, value, timestamp = row
-            if sensor_type == 'temperature':
-                sensor_data['temperature'].append({'timestamp': timestamp, 'value': value})
-            elif sensor_type == 'pressure':
-                sensor_data['pressure'].append({'timestamp': timestamp, 'value': value})
-            elif sensor_type == 'vibration':
-                sensor_data['vibration'].append({'timestamp': timestamp, 'value': value})
-        
-        # 설비 상태 변환
-        equipment_status = []
-        for row in equipment_results:
-            equipment_status.append({
-                'id': row[0],
-                'name': row[1],
-                'status': row[2],
-                'efficiency': row[3],
-                'type': row[4],
-                'last_maintenance': row[5]
-            })
-        
-        # 알림 데이터 변환
-        alerts = []
-        for row in alerts_results:
-            alerts.append({
-                'equipment': row[0],
-                'severity': row[1],
-                'message': row[2],
-                'timestamp': row[3]
-            })
-        
-        return {
-            "sensors": sensor_data,
-            "alerts": alerts,
-            "equipment": equipment_status,
-            "statistics": {
-                "sensor_count": len(sensor_results),
-                "alert_count": len(alerts_results),
-                "equipment_count": len(equipment_results)
-            },
-            "timestamp": datetime.now().isoformat(),
-            "status": "success"
-        }
-        
-    except Exception as e:
-        return {
-            "error": str(e),
-            "status": "error",
-            "timestamp": datetime.now().isoformat()
-        }
 
-@app.post("/dashboard/reset")
-async def reset_dashboard():
-    """대시보드 및 데이터베이스 완전 초기화"""
+
+
+
+# ======================
+# 사용자 관리 API (기업용)
+# ======================
+
+@app.get("/users")
+def get_users():
+    """사용자 목록 조회"""
+    try:
+        users = get_users_from_db()
+        return {"users": users, "count": len(users)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"사용자 조회 오류: {e}")
+
+@app.post("/users")
+def create_user(user: UserCreate):
+    """새 사용자 등록"""
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         
-        # 모든 테이블 데이터 클리어
-        cursor.execute("DELETE FROM sensor_data")
-        cursor.execute("DELETE FROM alerts")
-        cursor.execute("DELETE FROM ai_predictions")
-        cursor.execute("DELETE FROM maintenance_history")
-        cursor.execute("DELETE FROM audit_logs")
-        cursor.execute("DELETE FROM quality_trend")
-        cursor.execute("DELETE FROM production_kpi")
+        # 중복 번호 체크
+        cursor.execute("SELECT id FROM users WHERE phone_number = ?", (user.phone_number,))
+        if cursor.fetchone():
+            raise HTTPException(status_code=400, detail="이미 등록된 전화번호입니다.")
         
-        # 설비 상태는 초기화하되 기본 데이터는 유지
-        cursor.execute("UPDATE equipment_status SET status='정상', efficiency=95.0")
+        # 사용자 등록
+        cursor.execute("""
+            INSERT INTO users (phone_number, name, department, role)
+            VALUES (?, ?, ?, ?)
+        """, (user.phone_number, user.name, user.department, user.role))
+        
+        user_id = cursor.lastrowid
+        
+        # 기본 알림 구독 설정 (error만)
+        cursor.execute("""
+            INSERT INTO alert_subscriptions (user_id, severity)
+            VALUES (?, 'error')
+        """, (user_id,))
         
         conn.commit()
         conn.close()
         
-        return {
-            "message": "시스템이 완전히 초기화되었습니다",
-            "status": "success",
-            "timestamp": datetime.now().isoformat()
-        }
+        return {"message": "사용자가 등록되었습니다.", "user_id": user_id}
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        return {
-            "error": str(e), 
-            "status": "error",
-            "timestamp": datetime.now().isoformat()
-        }
+        raise HTTPException(status_code=500, detail=f"사용자 등록 오류: {e}")
 
-@app.get("/dashboard/status")
-async def get_dashboard_status():
-    """대시보드 연결 상태 및 데이터 현황 확인"""
+@app.put("/users/{user_id}")
+def update_user(user_id: int, user_update: UserUpdate):
+    """사용자 정보 수정"""
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         
-        # 각 테이블의 데이터 개수 확인
-        cursor.execute("SELECT COUNT(*) FROM sensor_data")
-        sensor_count = cursor.fetchone()[0]
+        # 업데이트할 필드 구성
+        update_fields = []
+        params = []
         
-        cursor.execute("SELECT COUNT(*) FROM alerts")
-        alert_count = cursor.fetchone()[0]
+        if user_update.name is not None:
+            update_fields.append("name = ?")
+            params.append(user_update.name)
+        if user_update.department is not None:
+            update_fields.append("department = ?")
+            params.append(user_update.department)
+        if user_update.role is not None:
+            update_fields.append("role = ?")
+            params.append(user_update.role)
+        if user_update.is_active is not None:
+            update_fields.append("is_active = ?")
+            params.append(user_update.is_active)
         
-        cursor.execute("SELECT COUNT(*) FROM equipment_status")
-        equipment_count = cursor.fetchone()[0]
+        if not update_fields:
+            raise HTTPException(status_code=400, detail="수정할 내용이 없습니다.")
+        
+        update_fields.append("updated_at = CURRENT_TIMESTAMP")
+        params.append(user_id)
+        
+        query = f"UPDATE users SET {', '.join(update_fields)} WHERE id = ?"
+        cursor.execute(query, params)
+        
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+        
+        conn.commit()
+        conn.close()
+        
+        return {"message": "사용자 정보가 수정되었습니다."}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"사용자 수정 오류: {e}")
+
+@app.delete("/users/{user_id}")
+def delete_user(user_id: int):
+    """사용자 삭제 (비활성화)"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute("UPDATE users SET is_active = 0 WHERE id = ?", (user_id,))
+        
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+        
+        conn.commit()
+        conn.close()
+        
+        return {"message": "사용자가 비활성화되었습니다."}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"사용자 삭제 오류: {e}")
+
+# ======================
+# 알림 구독 관리 API
+# ======================
+
+@app.get("/users/{user_id}/subscriptions")
+def get_user_subscriptions(user_id: int):
+    """사용자의 알림 구독 설정 조회"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT id, equipment, sensor_type, severity, is_active, created_at
+            FROM alert_subscriptions
+            WHERE user_id = ?
+            ORDER BY created_at DESC
+        """, (user_id,))
+        
+        subscriptions = []
+        for row in cursor.fetchall():
+            subscriptions.append({
+                'id': row[0],
+                'equipment': row[1],
+                'sensor_type': row[2],
+                'severity': row[3],
+                'is_active': bool(row[4]),
+                'created_at': row[5]
+            })
+        
+        conn.close()
+        return {"subscriptions": subscriptions}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"구독 설정 조회 오류: {e}")
+
+@app.post("/users/{user_id}/subscriptions")
+def create_subscription(user_id: int, subscription: AlertSubscription):
+    """알림 구독 설정 추가"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # 사용자 존재 확인
+        cursor.execute("SELECT id FROM users WHERE id = ? AND is_active = 1", (user_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+        
+        # 구독 설정 추가
+        cursor.execute("""
+            INSERT INTO alert_subscriptions (user_id, equipment, sensor_type, severity, is_active)
+            VALUES (?, ?, ?, ?, ?)
+        """, (user_id, subscription.equipment, subscription.sensor_type, 
+              subscription.severity, subscription.is_active))
+        
+        conn.commit()
+        conn.close()
+        
+        return {"message": "알림 구독이 설정되었습니다."}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"구독 설정 오류: {e}")
+
+@app.delete("/subscriptions/{subscription_id}")
+def delete_subscription(subscription_id: int):
+    """알림 구독 설정 삭제"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute("DELETE FROM alert_subscriptions WHERE id = ?", (subscription_id,))
+        
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="구독 설정을 찾을 수 없습니다.")
+        
+        conn.commit()
+        conn.close()
+        
+        return {"message": "알림 구독이 삭제되었습니다."}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"구독 삭제 오류: {e}")
+
+# ======================
+# SMS 이력 조회 API
+# ======================
+
+@app.get("/sms/history")
+def get_sms_history(limit: int = 50):
+    """SMS 전송 이력 조회"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT sh.id, u.name, sh.phone_number, sh.message, sh.status, sh.sent_at
+            FROM sms_history sh
+            JOIN users u ON sh.user_id = u.id
+            ORDER BY sh.sent_at DESC
+            LIMIT ?
+        """, (limit,))
+        
+        history = []
+        for row in cursor.fetchall():
+            history.append({
+                'id': row[0],
+                'user_name': row[1],
+                'phone_number': row[2],
+                'message': row[3],
+                'status': row[4],
+                'sent_at': row[5]
+            })
+        
+        conn.close()
+        return {"history": history, "count": len(history)}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"SMS 이력 조회 오류: {e}")
+
+# ======================
+# 설비별 사용자 관리 API
+# ======================
+
+@app.get("/equipment/{equipment_id}/users")
+def get_equipment_users(equipment_id: str):
+    """특정 설비에 할당된 사용자 목록 조회"""
+    try:
+        # 설비 존재 확인
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, name FROM equipment_status WHERE id = ?", (equipment_id,))
+        equipment = cursor.fetchone()
+        conn.close()
+        
+        if not equipment:
+            raise HTTPException(status_code=404, detail="설비를 찾을 수 없습니다.")
+        
+        users = get_equipment_users_by_equipment(equipment_id)
+        return {
+            "equipment_id": equipment_id,
+            "equipment_name": equipment[1],
+            "users": users,
+            "count": len(users)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"설비별 사용자 조회 오류: {e}")
+
+@app.post("/equipment/{equipment_id}/users")
+def assign_user_to_equipment(equipment_id: str, assignment: EquipmentUserAssignment):
+    """설비에 사용자 할당"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # 설비 존재 확인
+        cursor.execute("SELECT id FROM equipment_status WHERE id = ?", (equipment_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="설비를 찾을 수 없습니다.")
+        
+        # 사용자 존재 확인
+        cursor.execute("SELECT id, name FROM users WHERE id = ? AND is_active = 1", (assignment.user_id,))
+        user = cursor.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+        
+        # 중복 할당 확인
+        cursor.execute("SELECT id FROM equipment_users WHERE equipment_id = ? AND user_id = ?", 
+                      (equipment_id, assignment.user_id))
+        if cursor.fetchone():
+            raise HTTPException(status_code=400, detail="이미 할당된 사용자입니다.")
+        
+        # 주담당자 설정 시 기존 주담당자 해제
+        if assignment.is_primary:
+            cursor.execute("UPDATE equipment_users SET is_primary = 0 WHERE equipment_id = ?", (equipment_id,))
+        
+        # 사용자 할당
+        cursor.execute("""
+            INSERT INTO equipment_users (equipment_id, user_id, role, is_primary)
+            VALUES (?, ?, ?, ?)
+        """, (equipment_id, assignment.user_id, assignment.role, assignment.is_primary))
+        
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"✅ 사용자 할당 완료: {user[1]} → {equipment_id}")
+        return {"message": f"사용자 '{user[1]}'이(가) 설비에 할당되었습니다."}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"사용자 할당 오류: {e}")
+
+@app.put("/equipment/{equipment_id}/users/{user_id}")
+def update_equipment_user(equipment_id: str, user_id: int, update_data: EquipmentUserUpdate):
+    """설비별 사용자 정보 수정"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # 할당 정보 존재 확인
+        cursor.execute("SELECT id FROM equipment_users WHERE equipment_id = ? AND user_id = ?", 
+                      (equipment_id, user_id))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="할당 정보를 찾을 수 없습니다.")
+        
+        # 업데이트할 필드 구성
+        update_fields = []
+        params = []
+        
+        if update_data.role is not None:
+            update_fields.append("role = ?")
+            params.append(update_data.role)
+        
+        if update_data.is_primary is not None:
+            if update_data.is_primary:
+                # 주담당자 설정 시 기존 주담당자 해제
+                cursor.execute("UPDATE equipment_users SET is_primary = 0 WHERE equipment_id = ?", (equipment_id,))
+            update_fields.append("is_primary = ?")
+            params.append(update_data.is_primary)
+        
+        if not update_fields:
+            raise HTTPException(status_code=400, detail="수정할 내용이 없습니다.")
+        
+        update_fields.append("updated_at = CURRENT_TIMESTAMP")
+        params.extend([equipment_id, user_id])
+        
+        query = f"UPDATE equipment_users SET {', '.join(update_fields)} WHERE equipment_id = ? AND user_id = ?"
+        cursor.execute(query, params)
+        
+        conn.commit()
+        conn.close()
+        
+        return {"message": "사용자 할당 정보가 수정되었습니다."}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"사용자 할당 수정 오류: {e}")
+
+@app.delete("/equipment/{equipment_id}/users/{user_id}")
+def remove_user_from_equipment(equipment_id: str, user_id: int):
+    """설비에서 사용자 할당 해제"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute("DELETE FROM equipment_users WHERE equipment_id = ? AND user_id = ?", 
+                      (equipment_id, user_id))
+        
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="할당 정보를 찾을 수 없습니다.")
+        
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"✅ 사용자 할당 해제 완료: user_id {user_id} → {equipment_id}")
+        return {"message": "사용자 할당이 해제되었습니다."}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"사용자 할당 해제 오류: {e}")
+
+@app.get("/users/{user_id}/equipment")
+def get_user_equipment(user_id: int):
+    """특정 사용자가 담당하는 설비 목록 조회"""
+    try:
+        # 사용자 존재 확인
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, name FROM users WHERE id = ? AND is_active = 1", (user_id,))
+        user = cursor.fetchone()
+        conn.close()
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+        
+        equipment_list = get_equipment_users_by_user(user_id)
+        return {
+            "user_id": user_id,
+            "user_name": user[1],
+            "equipment": equipment_list,
+            "count": len(equipment_list)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"사용자별 설비 조회 오류: {e}")
+
+@app.get("/equipment/users/summary")
+def get_equipment_users_summary():
+    """설비별 사용자 할당 요약 정보"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # 설비별 사용자 수 통계
+        cursor.execute("""
+            SELECT es.id, es.name, es.type, COUNT(eu.user_id) as user_count,
+                   SUM(CASE WHEN eu.is_primary = 1 THEN 1 ELSE 0 END) as primary_count
+            FROM equipment_status es
+            LEFT JOIN equipment_users eu ON es.id = eu.equipment_id
+            GROUP BY es.id, es.name, es.type
+            ORDER BY es.name
+        """)
+        
+        summary = []
+        for row in cursor.fetchall():
+            summary.append({
+                'equipment_id': row[0],
+                'equipment_name': row[1],
+                'equipment_type': row[2],
+                'user_count': row[3],
+                'primary_user_count': row[4]
+            })
+        
+        # 전체 통계
+        cursor.execute("SELECT COUNT(*) FROM equipment_users")
+        total_assignments = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM equipment_users WHERE is_primary = 1")
+        total_primary = cursor.fetchone()[0]
         
         conn.close()
         
         return {
-            "sensor_count": sensor_count,
-            "alert_count": alert_count,
-            "equipment_count": equipment_count,
-            "last_update": datetime.now().isoformat(),
-            "status": "connected"
+            "summary": summary,
+            "total_assignments": total_assignments,
+            "total_primary_users": total_primary,
+            "equipment_count": len(summary)
         }
         
     except Exception as e:
-        return {
-            "error": str(e),
-            "status": "disconnected",
-            "timestamp": datetime.now().isoformat()
-        }
+        raise HTTPException(status_code=500, detail=f"요약 정보 조회 오류: {e}")
 
 # 웹 링크 처리 엔드포인트들 추가
-@app.get("/action/{token}")
+@app.get("/action/{token}", response_class=HTMLResponse)
 async def show_action_page(token: str):
     """처리 페이지 표시"""
     

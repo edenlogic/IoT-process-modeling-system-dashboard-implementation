@@ -60,7 +60,7 @@ class AIConfig:
 
 # ===== Mock 데이터 섹션 =====
 class MockData:
-    """테스트용 가짜 데이터"""
+    """AI 서비스용 모의 데이터"""
     
     # 설비 특성
     EQUIPMENT_CHARACTERISTICS = {
@@ -627,74 +627,3 @@ def get_ai_status() -> dict:
     """AI 서비스 상태"""
     return ai_service.get_status()
 
-# ===== 테스트 코드 =====
-if __name__ == "__main__":
-    import asyncio
-    
-    # 테스트 알림 데이터
-    test_alerts = [
-        {
-            "equipment": "press_001",
-            "sensor_type": "temperature",
-            "value": 87.5,
-            "threshold": 85.0,
-            "severity": "error"
-        },
-        {
-            "equipment": "weld_002",
-            "sensor_type": "vibration",
-            "value": 3.5,
-            "threshold": 3.0,
-            "severity": "warning"
-        },
-        {
-            "equipment": "inspect_001",
-            "sensor_type": "pressure",
-            "value": 0.2,
-            "threshold": 0.5,
-            "severity": "error"
-        }
-    ]
-    
-    async def test():
-        print("="*50)
-        print("POSCO IoT AI 서비스 테스트 (Gemini)")
-        print("="*50)
-        print(f"AI 상태: {json.dumps(get_ai_status(), ensure_ascii=False, indent=2)}")
-        
-        if is_ai_enabled():
-            print("\n✅ AI가 활성화되어 있습니다.\n")
-            
-            for i, test_alert in enumerate(test_alerts, 1):
-                print(f"\n{'='*30} 테스트 {i} {'='*30}")
-                print(f"테스트 데이터: {test_alert}")
-                
-                # 알림 메시지 테스트
-                print("\n📢 AI 알림 메시지:")
-                message = await generate_alert_message(test_alert)
-                print(message)
-                
-                # 조치 추천 테스트
-                print("\n🤖 AI 조치 추천:")
-                recommendation = await get_action_recommendation(test_alert)
-                print(f"추천 조치: {recommendation['action']}")
-                print(f"신뢰도: {recommendation['confidence']*100:.0f}%")
-                print(f"\n안전 분석: {recommendation['safety_analysis']}")
-                print(f"예상 결과: {recommendation['expected_result']}")
-                print(f"과거 비교: {recommendation['historical_comparison']}")
-                print(f"\n전체 설명:\n{recommendation['explanation']}")
-                
-                # 캐시 테스트
-                print("\n🔄 캐시 테스트 (동일 요청):")
-                message2 = await generate_alert_message(test_alert)
-                print(f"캐시 적용: {'예' if message == message2 else '아니오'}")
-                
-        else:
-            print("\n❌ AI가 비활성화되어 있습니다.")
-            print("다음을 확인하세요:")
-            print("1. .env 파일에 ENABLE_AI_FEATURES=true 설정")
-            print("2. .env 파일에 GEMINI_API_KEY 설정")
-            print("3. pip install google-generativeai 실행")
-    
-    # 테스트 실행
-    asyncio.run(test())

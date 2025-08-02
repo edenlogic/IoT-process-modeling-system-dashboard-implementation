@@ -89,11 +89,30 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 -- ======================
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT, -- 고유번호
-    username TEXT UNIQUE NOT NULL,        -- 로그인 ID
-    password_hash TEXT NOT NULL,          -- 패스워드(암호화 저장)
-    display_name TEXT,                    -- 표시이름
-    role TEXT,                            -- 역할(admin, operator 등)
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    phone_number TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    department TEXT,
+    role TEXT DEFAULT 'user', -- admin, manager, user
+    is_active BOOLEAN DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ======================
+-- 설비별 사용자 관리 테이블 (신규)
+-- (각 설비에 할당된 담당자/관리자 정보)
+-- ======================
+CREATE TABLE IF NOT EXISTS equipment_users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    equipment_id TEXT NOT NULL,           -- 설비 ID (equipment_status 참조)
+    user_id INTEGER NOT NULL,             -- 사용자 ID (users 참조)
+    role TEXT NOT NULL,                   -- 역할(담당자, 관리자, 감시자 등)
+    is_primary BOOLEAN DEFAULT 0,         -- 주담당자 여부
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (equipment_id) REFERENCES equipment_status(id),
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    UNIQUE(equipment_id, user_id)         -- 중복 할당 방지
 );
 
 -- ======================
@@ -127,3 +146,36 @@ CREATE TABLE IF NOT EXISTS production_kpi (
     quality REAL NOT NULL,                -- 품질률(%)
     timestamp TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 알림 구독 설정 테이블
+CREATE TABLE IF NOT EXISTS alert_subscriptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    equipment TEXT,
+    sensor_type TEXT,
+    severity TEXT, -- error, warning, info
+    is_active BOOLEAN DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+-- 알림 전송 이력 테이블
+CREATE TABLE IF NOT EXISTS sms_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    alert_id INTEGER NOT NULL,
+    phone_number TEXT NOT NULL,
+    message TEXT NOT NULL,
+    status TEXT DEFAULT 'sent', -- sent, failed, delivered
+    sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (alert_id) REFERENCES alerts(id)
+);
+
+-- 기본 관리자 계정 생성
+INSERT OR IGNORE INTO users (phone_number, name, department, role) 
+VALUES ('01074884038', '시스템 관리자', 'IT', 'admin');
+
+-- 기본 알림 구독 설정 (모든 error 알림)
+INSERT OR IGNORE INTO alert_subscriptions (user_id, severity) 
+SELECT id, 'error' FROM users WHERE role = 'admin';

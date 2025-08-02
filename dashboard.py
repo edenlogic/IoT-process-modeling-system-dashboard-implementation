@@ -121,53 +121,20 @@ def get_color_and_icon_for_probability(status, probability):
     
     # 이상 상태의 경우: 낮은 확률이 좋음 (녹색), 높은 확률이 나쁨 (빨간색)
     else:
-        if probability < 0.3:  # 30% 미만
+        if probability <= 0.05:  # 5% 이하 - 정상
             return {'color': '#10B981', 'bg': '#ECFDF5', 'icon': '🟢'}
-        elif probability < 0.6:  # 30% 이상 60% 미만
+        elif probability <= 0.10:  # 5% 초과 10% 이하 - 경고
             return {'color': '#F59E0B', 'bg': '#FFFBEB', 'icon': '🟠'}
-        else:  # 60% 이상
+        else:  # 10% 초과 - 위험
             return {'color': '#EF4444', 'bg': '#FEF2F2', 'icon': '🔴'}
 
 def get_ai_prediction_results(use_real_api=True):
     """AI 예측 결과 JSON 파일들을 읽어오기"""
     predictions = {}
     
-        # API 연동이 OFF인 경우 더미 데이터 반환
+    # API 연동이 OFF인 경우 더미 데이터 반환
     if not use_real_api:
-        # 설비 이상 예측 더미 데이터 (77.1% 정상 - 주의 상태)
-        predictions['abnormal_detection'] = {
-            'status': 'success',
-            'prediction': {
-                'predicted_class': 'normal',
-                'predicted_class_description': '정상',
-                'confidence': 0.85,
-                'probabilities': {
-                    'normal': 0.771,
-                    'bearing_fault': 0.089,
-                    'roll_misalignment': 0.067,
-                    'motor_overload': 0.045,
-                    'lubricant_shortage': 0.028
-                },
-                'max_status': 'normal'
-            },
-            'timestamp': datetime.now().isoformat()
-        }
-        
-        # 유압 이상 탐지 더미 데이터 (90% 정상)
-        predictions['hydraulic_detection'] = {
-            'status': 'success',
-            'prediction': {
-                'prediction': 0,  # 0: 정상, 1: 이상
-                'probabilities': {
-                    'normal': 0.90,
-                    'abnormal': 0.10
-                },
-                'confidence': 0.90
-            },
-            'timestamp': datetime.now().isoformat()
-        }
-        
-        return predictions
+        return generate_ai_prediction_data()
     
     # API 연동이 ON인 경우 실제 JSON 파일 읽기
     # 설비 이상 예측 결과 읽기
@@ -205,6 +172,143 @@ def get_ai_prediction_results(use_real_api=True):
         }
     
     return predictions
+
+def generate_ai_prediction_data():
+    """AI 예측 결과 더미 데이터 생성"""
+    predictions = {}
+    
+    # 설비 이상 예측 더미 데이터 (새로운 기준 적용)
+    predictions['abnormal_detection'] = {
+        'status': 'success',
+        'prediction': {
+            'predicted_class': 'normal',
+            'predicted_class_description': '정상',
+            'confidence': 0.85,
+            'probabilities': {
+                'normal': 0.92,  # 92% 정상 (5% 이하 기준으로 안전)
+                'bearing_fault': 0.04,  # 4% 베어링 고장 (5% 이하 - 정상)
+                'roll_misalignment': 0.025,  # 2.5% 롤 정렬 불량 (5% 이하 - 정상)
+                'motor_overload': 0.01,  # 1% 모터 과부하 (5% 이하 - 정상)
+                'lubricant_shortage': 0.005  # 0.5% 윤활유 부족 (5% 이하 - 정상)
+            },
+            'max_status': 'normal'
+        },
+        'timestamp': datetime.now().isoformat()
+    }
+    
+    # 유압 이상 탐지 더미 데이터 (새로운 기준 적용)
+    predictions['hydraulic_detection'] = {
+        'status': 'success',
+        'prediction': {
+            'prediction': 0,  # 0: 정상, 1: 이상
+            'probabilities': {
+                'normal': 0.95,  # 95% 정상 (5% 이하 기준으로 안전)
+                'abnormal': 0.05  # 5% 이상 (5% 이하 - 정상)
+            },
+            'confidence': 0.95
+        },
+        'timestamp': datetime.now().isoformat()
+    }
+    
+    return predictions
+
+# 설비별 사용자 관리 API 함수들
+def get_users_from_api(use_real_api=True):
+    """사용자 목록 조회"""
+    if use_real_api:
+        try:
+            response = requests.get(f"{API_BASE_URL}/users", timeout=5)
+            if response.status_code == 200:
+                return response.json()['users']
+            else:
+                print(f"사용자 목록 API 오류: {response.status_code}")
+                return []
+        except Exception as e:
+            print(f"사용자 목록 API 호출 오류: {e}")
+            return []
+    else:
+        return []
+
+def get_equipment_users_from_api(equipment_id, use_real_api=True):
+    """설비별 사용자 할당 정보 조회"""
+    if use_real_api:
+        try:
+            response = requests.get(f"{API_BASE_URL}/equipment/{equipment_id}/users", timeout=5)
+            if response.status_code == 200:
+                return response.json()['users']
+            else:
+                print(f"설비별 사용자 API 오류: {response.status_code}")
+                return []
+        except Exception as e:
+            print(f"설비별 사용자 API 호출 오류: {e}")
+            return []
+    else:
+        return []
+
+def assign_user_to_equipment_api(equipment_id, user_id, role="담당자", is_primary=False, use_real_api=True):
+    """설비에 사용자 할당"""
+    if use_real_api:
+        try:
+            data = {
+                "equipment_id": equipment_id,
+                "user_id": user_id,
+                "role": role,
+                "is_primary": is_primary
+            }
+            response = requests.post(f"{API_BASE_URL}/equipment/{equipment_id}/users", 
+                                   json=data, timeout=5)
+            if response.status_code == 200:
+                return True, response.json()['message']
+            else:
+                return False, f"할당 실패: {response.status_code}"
+        except Exception as e:
+            return False, f"API 호출 오류: {e}"
+    else:
+        return True, "시뮬레이션 모드: 할당 완료"
+
+def remove_user_from_equipment_api(equipment_id, user_id, use_real_api=True):
+    """설비에서 사용자 할당 해제"""
+    if use_real_api:
+        try:
+            response = requests.delete(f"{API_BASE_URL}/equipment/{equipment_id}/users/{user_id}", 
+                                     timeout=5)
+            if response.status_code == 200:
+                return True, response.json()['message']
+            else:
+                return False, f"해제 실패: {response.status_code}"
+        except Exception as e:
+            return False, f"API 호출 오류: {e}"
+    else:
+        return True, "시뮬레이션 모드: 해제 완료"
+
+def get_equipment_users_by_user(user_id):
+    """특정 사용자가 담당하는 설비 목록 조회"""
+    try:
+        response = requests.get(f"{API_BASE_URL}/users/{user_id}/equipment", timeout=5)
+        if response.status_code == 200:
+            return response.json()['equipment']
+        else:
+            print(f"사용자별 설비 API 오류: {response.status_code}")
+            return []
+    except Exception as e:
+        print(f"사용자별 설비 API 호출 오류: {e}")
+        return []
+
+def get_equipment_users_summary_api(use_real_api=True):
+    """설비별 사용자 할당 요약 정보"""
+    if use_real_api:
+        try:
+            response = requests.get(f"{API_BASE_URL}/equipment/users/summary", timeout=5)
+            if response.status_code == 200:
+                return response.json()
+            else:
+                print(f"요약 정보 API 오류: {response.status_code}")
+                return {"summary": [], "total_assignments": 0, "total_primary_users": 0, "equipment_count": 0}
+        except Exception as e:
+            print(f"요약 정보 API 호출 오류: {e}")
+            return {"summary": [], "total_assignments": 0, "total_primary_users": 0, "equipment_count": 0}
+    else:
+        return {"summary": [], "total_assignments": 0, "total_primary_users": 0, "equipment_count": 0}
 
 def has_critical_alerts(alerts):
     """위험 알림 감지 함수"""
@@ -407,6 +511,11 @@ st.markdown("""
     /* 모든 텍스트 번역 방지 */
     body, html {
         translate: none !important;
+    }
+    
+    /* 텍스트 입력 필드만 배경색 변경 */
+    .stTextInput > div > div > input {
+        background-color: #f4f4f4 !important;
     }
     
     /* 특정 텍스트 번역 방지 */
@@ -1757,12 +1866,14 @@ def main():
     # 백그라운드 스레드 비활성화 (st_autorefresh 사용)
     print("[DEBUG] 백그라운드 스레드 비활성화됨")
     
-    # st_autorefresh를 사용한 자동 새로고침 (API 토글이 ON일 때만)
-    auto_refresh = st.session_state.get('auto_refresh', True)
-    if auto_refresh and st.session_state.get('api_toggle', False):
+    # 자동 새로고침 상태 확인 (UI 깨짐 방지)
+    api_toggle = st.session_state.get('api_toggle', False)
+    refresh_interval = st.session_state.get('refresh_interval_selector', '30초')
+    
+    # API 토글이 ON이고 수동이 아닐 때만 자동 새로고침 실행
+    if api_toggle and refresh_interval != '수동':
         try:
-            # 선택된 간격에 따라 자동 새로고침
-            refresh_interval = st.session_state.get('refresh_interval_selector', '30초')
+            # 간격 설정
             if refresh_interval == '15초':
                 interval_ms = 15000
             elif refresh_interval == '30초':
@@ -1776,12 +1887,18 @@ def main():
             elif refresh_interval == '10분':
                 interval_ms = 600000
             else:
-                interval_ms = 30000  # 기본값
+                interval_ms = 30000
             
-            st_autorefresh(interval=interval_ms, key="auto_refresh")
-            print(f"🔄 st_autorefresh 활성화됨 ({refresh_interval} 간격)")
+            # 안전한 자동 새로고침 실행
+            try:
+                st_autorefresh(interval=interval_ms, key="auto_refresh")
+                print(f"🔄 자동 새로고침 활성화: {refresh_interval}")
+            except Exception as refresh_error:
+                print(f"⚠️ 자동 새로고침 오류: {refresh_error}")
         except Exception as e:
-            print(f"⚠️ st_autorefresh 오류: {e}")
+            print(f"⚠️ 자동 새로고침 설정 오류: {e}")
+    else:
+        print("🔄 수동 새로고침 모드")
 
     st.markdown(
         '''
@@ -2080,14 +2197,13 @@ def main():
             key="refresh_interval_selector"
         )
         
-        # 자동 새로고침 활성화/비활성화
-        auto_refresh = st.checkbox("자동 새로고침 활성화", value=st.session_state.get('auto_refresh', True), key="auto_refresh_checkbox")
+        # 자동 새로고침 간격 선택 (수동 옵션 포함)
         
         # 새로고침 상태 표시
-        if auto_refresh and refresh_interval != "수동":
-            st.info(f"🔄 {refresh_interval}마다 자동 새로고침")
-        elif refresh_interval == "수동":
+        if refresh_interval == "수동":
             st.info("🔄 수동 새로고침 모드")
+        else:
+            st.info(f"🔄 {refresh_interval}마다 자동 새로고침")
         
         # 데이터 제거 버튼
         if st.button("🗑️ 데이터 제거", help="기존 센서 데이터와 알림을 모두 삭제합니다."):
@@ -2923,351 +3039,430 @@ def main():
 
     with tabs[1]:  # 설비 관리
         st.markdown('<div class="main-header no-translate" translate="no">🏭 설비 관리</div>', unsafe_allow_html=True)
-        st.write("공장 내 주요 설비의 상태, 효율, 정비 이력 등을 한눈에 관리할 수 있습니다.")
+        st.write("설비별 상태를 확인하고 관리할 수 있습니다.")
         
-        # API 토글 상태에 따라 데이터 가져오기
-        if use_real_api:
-            try:
-                equipment_list = get_equipment_status_from_api(use_real_api)
-                sensor_data = get_sensor_data_from_api(use_real_api)
-                alerts = get_alerts_from_api(use_real_api)
-            except Exception as e:
-                st.error(f"API 데이터 가져오기 오류: {e}")
-                equipment_list = generate_equipment_status()
-                sensor_data = generate_sensor_data()
-                alerts = generate_alert_data()
-        else:
+        # ======================
+        # 데이터 로드
+        # ======================
+        try:
+            # 설비 목록 조회
+            equipment_list = get_equipment_status_from_api(use_real_api) if use_real_api else generate_equipment_status()
+        except Exception as e:
+            st.error(f"데이터 로드 오류: {e}")
             equipment_list = generate_equipment_status()
-            sensor_data = generate_sensor_data()
-            alerts = generate_alert_data()
         
-        df = pd.DataFrame(equipment_list)
+        # ======================
+        # 설비 상태 요약
+        # ======================
+        st.markdown("### 📊 설비 상태 요약")
         
-        # 빈 데이터프레임 처리
-        if df.empty:
-            st.info("설비 데이터가 없습니다.")
-            st.button("정비 완료(확장)", disabled=True, key="eq_maint_btn_empty")
-            st.button("코멘트/이력 추가(확장)", disabled=True, key="eq_comment_btn_empty")
-            return
+        if equipment_list:
+            total_equipment = len(equipment_list)
+            normal_count = len([eq for eq in equipment_list if eq['status'] == '정상'])
+            warning_count = len([eq for eq in equipment_list if eq['status'] == '주의'])
+            error_count = len([eq for eq in equipment_list if eq['status'] == '오류'])
+            avg_efficiency = sum(eq['efficiency'] for eq in equipment_list) / total_equipment if total_equipment > 0 else 0
+            
+            col1, col2, col3, col4 = st.columns(4, gap="small")
+            
+            with col1:
+                st.markdown(f"""
+                <div class="kpi-card success no-translate" translate="no" style="padding:0.5rem 0.4rem; min-height:70px; height:80px;">
+                    <div class="kpi-label" style="font-size:0.9rem;">총 설비</div>
+                    <div class="kpi-value" style="font-size:1.3rem;">{total_equipment}대</div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col2:
+                st.markdown(f"""
+                <div class="kpi-card success no-translate" translate="no" style="padding:0.5rem 0.4rem; min-height:70px; height:80px;">
+                    <div class="kpi-label" style="font-size:0.9rem;">정상</div>
+                    <div class="kpi-value" style="font-size:1.3rem;">{normal_count}대</div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col3:
+                st.markdown(f"""
+                <div class="kpi-card warning no-translate" translate="no" style="padding:0.5rem 0.4rem; min-height:70px; height:80px;">
+                    <div class="kpi-label" style="font-size:0.9rem;">주의</div>
+                    <div class="kpi-value" style="font-size:1.3rem;">{warning_count}대</div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col4:
+                st.markdown(f"""
+                <div class="kpi-card danger no-translate" translate="no" style="padding:0.5rem 0.4rem; min-height:70px; height:80px;">
+                    <div class="kpi-label" style="font-size:0.9rem;">평균 효율</div>
+                    <div class="kpi-value" style="font-size:1.3rem;">{avg_efficiency:.1f}%</div>
+                </div>
+                """, unsafe_allow_html=True)
         
-        # 상단 KPI 카드
-        st.markdown("### 📊 설비 현황 요약")
-        col1, col2, col3, col4 = st.columns(4, gap="small")
-        
-        total_equipment = len(df)
-        normal_count = len(df[df['status'] == '정상'])
-        warning_count = len(df[df['status'] == '주의'])
-        error_count = len(df[df['status'] == '오류'])
-        avg_efficiency = df['efficiency'].mean()
-        
-        with col1:
-            st.markdown(f"""
-            <div class="kpi-card success no-translate" translate="no" style="padding:0.5rem 0.4rem; min-height:70px; height:80px;">
-                <div class="kpi-label" style="font-size:0.9rem;">전체 설비</div>
-                <div class="kpi-value" style="font-size:1.3rem;">{total_equipment}대</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown(f"""
-            <div class="kpi-card success no-translate" translate="no" style="padding:0.5rem 0.4rem; min-height:70px; height:80px;">
-                <div class="kpi-label" style="font-size:0.9rem;">정상 설비</div>
-                <div class="kpi-value" style="font-size:1.3rem;">{normal_count}대</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col3:
-            st.markdown(f"""
-            <div class="kpi-card warning no-translate" translate="no" style="padding:0.5rem 0.4rem; min-height:70px; height:80px;">
-                <div class="kpi-label" style="font-size:0.9rem;">주의 설비</div>
-                <div class="kpi-value" style="font-size:1.3rem;">{warning_count}대</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col4:
-            st.markdown(f"""
-            <div class="kpi-card danger no-translate" translate="no" style="padding:0.5rem 0.4rem; min-height:70px; height:80px;">
-                <div class="kpi-label" style="font-size:0.9rem;">평균 효율</div>
-                <div class="kpi-value" style="font-size:1.3rem;">{avg_efficiency:.1f}%</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        # 필터 및 검색
-        st.markdown("### 🔍 설비 검색 및 필터")
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            type_filter = st.selectbox("설비 타입", ["전체"] + sorted(df['type'].unique()))
-        with col2:
-            status_filter = st.selectbox("상태", ["전체", "정상", "주의", "오류"])
-        with col3:
-            search_term = st.text_input("설비명 검색", placeholder="설비명을 입력하세요...")
-        
-        # 필터링 적용
-        filtered = df.copy()
-        if type_filter != "전체":
-            filtered = filtered[filtered['type'] == type_filter]
-        if status_filter != "전체":
-            filtered = filtered[filtered['status'] == status_filter]
-        if search_term:
-            filtered = filtered[filtered['name'].str.contains(search_term, case=False, na=False)]
-        
-        # 상태 컬러/아이콘 강조
-        def status_icon(status):
-            return {'정상': '🟢', '주의': '🟠', '오류': '🔴'}.get(status, '⚪') + ' ' + status
-        
-        filtered['상태'] = filtered['status'].apply(status_icon)
-        
-        # 설비 목록 표시
+        # ======================
+        # 설비 목록 테이블
+        # ======================
         st.markdown("### 📋 설비 목록")
-        st.dataframe(filtered[['name', '상태', 'efficiency', 'type', 'last_maintenance']], 
-                    use_container_width=True, height=350)
         
-        # 상세정보 패널
-        if not filtered.empty:
-            st.markdown("### 🔧 설비 상세 정보")
-            selected = st.selectbox("설비 선택", filtered.index, format_func=lambda i: filtered.loc[i, 'name'])
+        if equipment_list:
+            # 필터링 옵션
+            col1, col2, col3 = st.columns(3, gap="small")
             
-            # 상세 정보 탭
-            detail_tab1, detail_tab2, detail_tab3, detail_tab4 = st.tabs(["기본 정보", "실시간 모니터링", "알림 이력", "정비 이력"])
+            with col1:
+                status_filter = st.selectbox("상태 필터", ["전체", "정상", "주의", "오류"], key="equipment_status_filter")
             
-            with detail_tab1:
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.markdown("**설비 기본 정보**")
-                    st.write(f"**설비 ID:** {filtered.loc[selected, 'id']}")
-                    st.write(f"**설비명:** {filtered.loc[selected, 'name']}")
-                    st.write(f"**설비 타입:** {filtered.loc[selected, 'type']}")
-                    st.write(f"**현재 상태:** {filtered.loc[selected, 'status']}")
-                
-                with col2:
-                    st.markdown("**운영 정보**")
-                    st.write(f"**가동률:** {filtered.loc[selected, 'efficiency']}%")
-                    st.write(f"**마지막 정비:** {filtered.loc[selected, 'last_maintenance']}")
-                    
-                    # 상태별 색상 표시
-                    status = filtered.loc[selected, 'status']
-                    if status == '정상':
-                        st.success("✅ 설비가 정상적으로 운영되고 있습니다.")
-                    elif status == '주의':
-                        st.warning("⚠️ 설비에 주의가 필요합니다. 점검이 권장됩니다.")
-                    else:
-                        st.error("🚨 설비에 오류가 발생했습니다. 즉시 조치가 필요합니다.")
+            with col2:
+                equipment_types = list(set([eq.get('type', '') for eq in equipment_list]))
+                type_filter = st.selectbox("설비 종류", ["전체"] + equipment_types, key="equipment_type_filter")
             
-            with detail_tab2:
-                st.markdown("**실시간 센서 데이터**")
-                
-                # 해당 설비의 센서 데이터 필터링
-                equipment_name = filtered.loc[selected, 'name']
-                
-                # 센서 데이터가 DataFrame이고 equipment 컬럼이 있는 경우에만 필터링
-                if isinstance(sensor_data, pd.DataFrame) and 'equipment' in sensor_data.columns:
-                    equipment_sensor_data = sensor_data[sensor_data['equipment'] == equipment_name]
-                    
-                    if not equipment_sensor_data.empty:
-                        # 센서 데이터 차트
-                        fig = go.Figure()
-                        
-                        # 시간 인덱스 생성
-                        time_range = list(range(len(equipment_sensor_data)))
-                        
-                        # 온도 데이터
-                        if 'temperature' in equipment_sensor_data.columns:
-                            fig.add_trace(go.Scatter(
-                                x=time_range,
-                                y=equipment_sensor_data['temperature'],
-                                name='온도 (°C)',
-                                line=dict(color='#ef4444', width=2)
-                            ))
-                        
-                        # 압력 데이터
-                        if 'pressure' in equipment_sensor_data.columns:
-                            fig.add_trace(go.Scatter(
-                                x=time_range,
-                                y=equipment_sensor_data['pressure'],
-                                name='압력 (bar)',
-                                line=dict(color='#3b82f6', width=2)
-                            ))
-                        
-                        # 진동 데이터
-                        if 'vibration' in equipment_sensor_data.columns:
-                            fig.add_trace(go.Scatter(
-                                x=time_range,
-                                y=equipment_sensor_data['vibration'],
-                                name='진동 (mm/s)',
-                                line=dict(color='#10b981', width=2)
-                            ))
-                        
-                        fig.update_layout(
-                            title=f"{equipment_name} 실시간 센서 데이터",
-                            xaxis_title="시간",
-                            yaxis_title="센서 값",
-                            height=300,
-                            plot_bgcolor='white',
-                            paper_bgcolor='white',
-                            margin=dict(l=8, r=8, t=8, b=8),
-                            font=dict(color='#1e293b', size=11)
-                        )
-                        st.plotly_chart(fig, use_container_width=True)
-                        
-                        # 현재 센서 값 표시
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            if 'temperature' in equipment_sensor_data.columns:
-                                current_temp = equipment_sensor_data['temperature'].iloc[-1]
-                                st.metric("현재 온도", f"{current_temp:.1f}°C")
-                        with col2:
-                            if 'pressure' in equipment_sensor_data.columns:
-                                current_pressure = equipment_sensor_data['pressure'].iloc[-1]
-                                st.metric("현재 압력", f"{current_pressure:.1f} bar")
-                        with col3:
-                            if 'vibration' in equipment_sensor_data.columns:
-                                current_vibration = equipment_sensor_data['vibration'].iloc[-1]
-                                st.metric("현재 진동", f"{current_vibration:.2f} mm/s")
-                    else:
-                        st.info("해당 설비의 센서 데이터가 없습니다.")
-                else:
-                    # 센서 데이터가 없거나 equipment 컬럼이 없는 경우 더미 데이터 표시
-                    st.info("센서 데이터를 불러올 수 없습니다. 더미 데이터를 표시합니다.")
-                    
-                    # 더미 센서 데이터 생성
-                    times = pd.date_range(start=datetime.now() - timedelta(hours=2), end=datetime.now(), freq='5min')
-                    dummy_temp = 50 + 12 * np.sin(np.linspace(0, 4*np.pi, len(times))) + np.random.normal(0, 3, len(times))
-                    dummy_pressure = 150 + 25 * np.cos(np.linspace(0, 3*np.pi, len(times))) + np.random.normal(0, 5, len(times))
-                    dummy_vibration = 0.5 + 0.3 * np.sin(np.linspace(0, 2*np.pi, len(times))) + np.random.normal(0, 0.1, len(times))
-                    
-                    fig = go.Figure()
-                    fig.add_trace(go.Scatter(x=list(range(len(times))), y=dummy_temp, name='온도 (°C)', line=dict(color='#ef4444', width=2)))
-                    fig.add_trace(go.Scatter(x=list(range(len(times))), y=dummy_pressure, name='압력 (bar)', line=dict(color='#3b82f6', width=2)))
-                    fig.add_trace(go.Scatter(x=list(range(len(times))), y=dummy_vibration, name='진동 (mm/s)', line=dict(color='#10b981', width=2)))
-                    
-                    fig.update_layout(
-                        title=f"{equipment_name} 실시간 센서 데이터 (더미)",
-                        xaxis_title="시간",
-                        yaxis_title="센서 값",
-                        height=300,
-                        plot_bgcolor='white',
-                        paper_bgcolor='white',
-                        margin=dict(l=8, r=8, t=8, b=8),
-                        font=dict(color='#1e293b', size=11)
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-                    
-                    # 현재 센서 값 표시
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("현재 온도", f"{dummy_temp[-1]:.1f}°C")
-                    with col2:
-                        st.metric("현재 압력", f"{dummy_pressure[-1]:.1f} bar")
-                    with col3:
-                        st.metric("현재 진동", f"{dummy_vibration[-1]:.2f} mm/s")
+            with col3:
+                search_term = st.text_input("🔍 설비명 검색", placeholder="설비명을 입력하세요...", key="equipment_search")
             
-            with detail_tab3:
-                st.markdown("**최근 알림/이상 이력**")
-                
-                # 해당 설비의 알림 필터링
-                equipment_alerts = [a for a in alerts if a.get('equipment') == equipment_name]
-                
-                if equipment_alerts:
-                    alert_df = pd.DataFrame(equipment_alerts)
-                    
-                    # 심각도별 색상 적용
-                    def sev_icon(sev):
-                        return {'error': '🔴', 'warning': '🟠', 'info': '🔵'}.get(sev, '⚪') + ' ' + sev
-                    
-                    alert_df['심각도'] = alert_df['severity'].apply(sev_icon)
-                    
-                    # 필요한 컬럼들만 표시
-                    display_columns = ['time', 'issue', '심각도', 'status'] if 'status' in alert_df.columns else ['time', 'issue', '심각도']
-                    st.dataframe(alert_df[display_columns], use_container_width=True, height=200)
-                    
-                    # 알림 통계
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.markdown("**심각도별 알림 통계**")
-                        severity_counts = alert_df['severity'].value_counts()
-                        st.bar_chart(severity_counts)
-                    
-                    with col2:
-                        st.markdown("**최근 알림 트렌드**")
-                        # 시간별 알림 개수 (가상 데이터)
-                        hours = list(range(24))
-                        alert_counts = [np.random.randint(0, 5) for _ in hours]
-                        trend_df = pd.DataFrame({'시간': hours, '알림 수': alert_counts})
-                        st.line_chart(trend_df.set_index('시간'))
-                else:
-                    st.success("✅ 최근 알림/이상 이력이 없습니다.")
+            # 필터링 적용
+            filtered_equipment = equipment_list.copy()
             
-            with detail_tab4:
-                st.markdown("**정비 이력 및 관리**")
+            if status_filter != "전체":
+                filtered_equipment = [eq for eq in filtered_equipment if eq['status'] == status_filter]
+            
+            if type_filter != "전체":
+                filtered_equipment = [eq for eq in filtered_equipment if eq.get('type') == type_filter]
+            
+            if search_term:
+                filtered_equipment = [eq for eq in filtered_equipment if search_term.lower() in eq['name'].lower()]
+            
+            # 테이블 데이터 생성
+            if filtered_equipment:
+                table_data = []
+                for eq in filtered_equipment:
+                    status_icon = {'정상':'🟢','주의':'🟠','오류':'🔴'}.get(eq['status'],'🟢')
+                    table_data.append({
+                        "설비 ID": eq['id'],
+                        "설비명": eq['name'],
+                        "상태": f"{status_icon} {eq['status']}",
+                        "효율": f"{eq['efficiency']}%",
+                        "종류": eq.get('type', '-'),
+                        "마지막 정비": eq.get('last_maintenance', '-')
+                    })
                 
-                # 정비 이력 (가상 데이터)
-                maintenance_history = [
-                    {"정비일": filtered.loc[selected, 'last_maintenance'], "정비유형": "정기점검", "담당자": "홍길동", "상태": "완료"},
-                    {"정비일": "2024-01-10", "정비유형": "부품교체", "담당자": "김철수", "상태": "완료"},
-                    {"정비일": "2024-01-05", "정비유형": "긴급수리", "담당자": "박영희", "상태": "완료"},
-                    {"정비일": "2023-12-28", "정비유형": "정기점검", "담당자": "홍길동", "상태": "완료"}
-                ]
+                df = pd.DataFrame(table_data)
+                st.dataframe(df, use_container_width=True, height=400)
                 
-                maintenance_df = pd.DataFrame(maintenance_history)
-                st.dataframe(maintenance_df, use_container_width=True, height=200)
-                
-                # 정비 관리 기능
-                st.markdown("**정비 관리**")
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.markdown("**정비 완료 등록**")
-                    maintenance_type = st.selectbox("정비 유형", ["정기점검", "부품교체", "긴급수리", "기타"], key="maintenance_type")
-                    maintenance_worker = st.text_input("담당자", key="maintenance_worker")
+                # 상세 정보 표시
+                if st.button("📊 상세 정보 보기", key="show_equipment_details"):
+                    st.markdown("### 📊 설비별 상세 정보")
                     
-                    if st.button("정비 완료 등록", key="maintenance_complete"):
-                        st.success("정비 완료가 등록되었습니다.")
-                
-                with col2:
-                    st.markdown("**다음 정비 예정**")
-                    next_maintenance = st.date_input("다음 정비일", key="next_maintenance")
-                    maintenance_note = st.text_area("정비 메모", key="maintenance_note")
-                    
-                    if st.button("정비 예정 등록", key="maintenance_schedule"):
-                        st.success("정비 예정이 등록되었습니다.")
+                    for eq in filtered_equipment:
+                        with st.expander(f"{eq['name']} ({eq['id']})", expanded=False):
+                            col1, col2 = st.columns(2)
+                            
+                            with col1:
+                                st.markdown("**기본 정보**")
+                                st.write(f"설비 ID: {eq['id']}")
+                                st.write(f"설비명: {eq['name']}")
+                                st.write(f"종류: {eq.get('type', '-')}")
+                                st.write(f"현재 상태: {eq['status']}")
+                                st.write(f"마지막 정비: {eq.get('last_maintenance', '-')}")
+                            
+                            with col2:
+                                st.markdown("**성능 지표**")
+                                efficiency = eq['efficiency']
+                                
+                                # 효율성에 따른 색상 설정
+                                if efficiency >= 90:
+                                    color = "#10b981"
+                                    status_text = "우수"
+                                elif efficiency >= 70:
+                                    color = "#f59e0b"
+                                    status_text = "양호"
+                                else:
+                                    color = "#ef4444"
+                                    status_text = "개선 필요"
+                                
+                                st.write(f"가동 효율: {efficiency}% ({status_text})")
+                                
+                                # 진행률 바 표시
+                                st.markdown(f"""
+                                <div style="background: #f3f4f6; border-radius: 4px; height: 20px; margin: 10px 0;">
+                                    <div style="background: {color}; height: 100%; width: {efficiency}%; border-radius: 4px; transition: width 0.3s;"></div>
+                                </div>
+                                """, unsafe_allow_html=True)
+                            
+                            # 센서 데이터 차트 (더미 데이터)
+                            st.markdown("**📈 실시간 센서 데이터**")
+                            sensor_data = generate_sensor_data()
+                            if not sensor_data.empty:
+                                fig = go.Figure()
+                                
+                                # 첫 번째 설비의 데이터만 표시
+                                first_equipment = sensor_data['equipment'].iloc[0]
+                                equipment_data = sensor_data[sensor_data['equipment'] == first_equipment]
+                                
+                                if 'temperature' in equipment_data.columns:
+                                    fig.add_trace(go.Scatter(
+                                        x=list(range(len(equipment_data))),
+                                        y=equipment_data['temperature'],
+                                        mode='lines',
+                                        name='온도 (°C)',
+                                        line=dict(color='#ef4444', width=2)
+                                    ))
+                                
+                                if 'pressure' in equipment_data.columns:
+                                    fig.add_trace(go.Scatter(
+                                        x=list(range(len(equipment_data))),
+                                        y=equipment_data['pressure'],
+                                        mode='lines',
+                                        name='압력 (bar)',
+                                        line=dict(color='#3b82f6', width=2),
+                                        yaxis='y2'
+                                    ))
+                                
+                                if 'vibration' in equipment_data.columns:
+                                    fig.add_trace(go.Scatter(
+                                        x=list(range(len(equipment_data))),
+                                        y=equipment_data['vibration'],
+                                        mode='lines',
+                                        name='진동 (mm/s)',
+                                        line=dict(color='#10b981', width=2),
+                                        yaxis='y3'
+                                    ))
+                                
+                                fig.update_layout(
+                                    height=300,
+                                    margin=dict(l=0, r=0, t=0, b=0),
+                                    showlegend=True,
+                                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                                    yaxis=dict(title="온도 (°C)", side="left"),
+                                    yaxis2=dict(title="압력 (bar)", overlaying="y", side="right"),
+                                    yaxis3=dict(title="진동 (mm/s)", overlaying="y", side="right", position=0.95),
+                                    xaxis=dict(title="시간"),
+                                    plot_bgcolor='white',
+                                    paper_bgcolor='white',
+                                    font=dict(color='#1e293b')
+                                )
+                                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("검색 조건에 맞는 설비가 없습니다.")
+        else:
+            st.info("설비 데이터를 불러올 수 없습니다.")
         
-        # 설비 관리 기능
-        st.markdown("### ⚙️ 설비 관리 기능")
-        col1, col2, col3 = st.columns(3)
+        # ======================
+        # 설비 관리자 등록 버튼
+        # ======================
+        st.markdown("---")
+        st.markdown("### 👥 설비 관리자 등록")
+        
+        col1, col2 = st.columns(2, gap="small")
         
         with col1:
-            st.markdown("**설비 상태 변경**")
-            if not filtered.empty:
-                status_change_equipment = st.selectbox("설비 선택", filtered.index, format_func=lambda i: filtered.loc[i, 'name'], key="status_change")
-                new_status = st.selectbox("새 상태", ["정상", "주의", "오류"], key="new_status")
-                
-                if st.button("상태 변경", key="change_status"):
-                    st.success(f"설비 상태가 '{new_status}'로 변경되었습니다.")
+            if st.button("➕ 설비 관리자 등록", type="primary", use_container_width=True, key="equipment_manager_register_btn"):
+                st.session_state.show_equipment_manager_modal = True
         
         with col2:
-            st.markdown("**설비 효율 설정**")
-            if not filtered.empty:
-                efficiency_equipment = st.selectbox("설비 선택", filtered.index, format_func=lambda i: filtered.loc[i, 'name'], key="efficiency_change")
-                new_efficiency = st.slider("새 효율 (%)", 0, 100, int(filtered.loc[efficiency_equipment, 'efficiency']), key="new_efficiency")
-                
-                if st.button("효율 변경", key="change_efficiency"):
-                    st.success(f"설비 효율이 {new_efficiency}%로 변경되었습니다.")
+            if st.button("📋 관리자 목록 보기", use_container_width=True, key="equipment_manager_list_btn"):
+                st.session_state.show_equipment_manager_list = True
         
-        with col3:
-            st.markdown("**설비 정보 관리**")
-            if not filtered.empty:
-                info_equipment = st.selectbox("설비 선택", filtered.index, format_func=lambda i: filtered.loc[i, 'name'], key="info_change")
-                new_name = st.text_input("새 설비명", value=filtered.loc[info_equipment, 'name'], key="new_name")
-                equipment_types = ["프레스기", "용접기", "조립기", "검사기", "포장기"]
-                current_type = filtered.loc[info_equipment, 'type']
-                try:
-                    type_index = equipment_types.index(current_type)
-                except ValueError:
-                    type_index = 0  # 기본값
-                new_type = st.selectbox("새 설비 타입", equipment_types, index=type_index, key="new_type")
+        # ======================
+        # 설비 관리자 등록 모달
+        # ======================
+        if st.session_state.get('show_equipment_manager_modal', False):
+            with st.container():
+                st.markdown("---")
+                st.markdown("### ➕ 설비 관리자 등록 요청")
+                st.write("설비별 관리자 등록 요청을 할 수 있습니다. 등록 요청 후 담당자가 승인해드립니다.")
                 
-                if st.button("정보 변경", key="change_info"):
-                    st.success("설비 정보가 변경되었습니다.")
+                with st.form("equipment_manager_form"):
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        manager_name = st.text_input("이름 *", key="equipment_manager_name")
+                        manager_department = st.selectbox(
+                            "부서 *",
+                            ["생산관리팀", "품질관리팀", "설비관리팀", "기술팀", "IT팀", "기타"],
+                            key="equipment_manager_dept"
+                        )
+                        manager_phone = st.text_input("전화번호 *", key="equipment_manager_phone")
+                        manager_email = st.text_input("이메일", key="equipment_manager_email")
+                    
+                    with col2:
+                        manager_role = st.selectbox(
+                            "권한",
+                            ["user", "manager", "admin"],
+                            format_func=lambda x: {"user": "일반 사용자", "manager": "관리자", "admin": "시스템 관리자"}[x],
+                            key="equipment_manager_role"
+                        )
+                        manager_active = st.checkbox("활성 상태", value=True, key="equipment_manager_active")
+                        
+                        st.markdown("**기본 알림 설정**")
+                        default_error = st.checkbox("긴급 알림 (Error)", value=True, key="equipment_default_error")
+                        default_warning = st.checkbox("주의 알림 (Warning)", value=False, key="equipment_default_warning")
+                        default_info = st.checkbox("정보 알림 (Info)", value=False, key="equipment_default_info")
+                    
+                    # 설비 선택 영역
+                    st.markdown("**🏭 담당 설비 선택**")
+                    
+                    if equipment_list:
+                        # 설비를 타입별로 그룹화
+                        equipment_by_type = {}
+                        for eq in equipment_list:
+                            eq_type = eq.get('type', '기타')
+                            if eq_type not in equipment_by_type:
+                                equipment_by_type[eq_type] = []
+                            equipment_by_type[eq_type].append(eq)
+                        
+                        # 타입별로 멀티셀렉트 표시 (확장 가능한 UI)
+                        selected_equipment = []
+                        
+                        # 설비 타입 선택
+                        equipment_type_filter = st.selectbox(
+                            "설비 종류 선택",
+                            ["전체"] + list(equipment_by_type.keys()),
+                            key="manager_equipment_type_filter"
+                        )
+                        
+                        # 선택된 타입의 설비들만 표시
+                        if equipment_type_filter == "전체":
+                            display_equipment = equipment_list
+                        else:
+                            display_equipment = equipment_by_type.get(equipment_type_filter, [])
+                        
+                        if display_equipment:
+                            # 멀티셀렉트로 설비 선택
+                            equipment_options = [f"{eq['name']} ({eq['id']})" for eq in display_equipment]
+                            selected_equipment_names = st.multiselect(
+                                "담당할 설비를 선택하세요",
+                                options=equipment_options,
+                                key="manager_equipment_multiselect"
+                            )
+                            
+                            # 선택된 설비들을 ID로 변환
+                            for selected_name in selected_equipment_names:
+                                # 이름에서 ID 추출
+                                for eq in display_equipment:
+                                    if f"{eq['name']} ({eq['id']})" == selected_name:
+                                        selected_equipment.append({
+                                            "equipment_id": eq['id'],
+                                            "role": "담당자",
+                                            "is_primary": False
+                                        })
+                                        break
+                            
+                            # 선택된 설비 개수 표시
+                            if selected_equipment:
+                                st.info(f"선택된 설비: {len(selected_equipment)}개")
+                        else:
+                            st.info("해당 종류의 설비가 없습니다.")
+                    
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        submitted = st.form_submit_button("✅ 등록 요청", type="primary", use_container_width=True)
+                    
+                    with col2:
+                        if st.form_submit_button("❌ 취소", use_container_width=True):
+                            st.session_state.show_equipment_manager_modal = False
+                            st.rerun()
+                    
+                    with col3:
+                        if st.form_submit_button("🔄 초기화", use_container_width=True):
+                            st.rerun()
+                
+                # 폼 제출 처리 (폼 밖에서)
+                if submitted:
+                        if manager_name and manager_phone:
+                            try:
+                                # 사용자 등록
+                                user_data = {
+                                    "phone_number": manager_phone,
+                                    "name": manager_name,
+                                    "department": manager_department,
+                                    "role": manager_role
+                                }
+                                
+                                response = requests.post(f"{API_BASE_URL}/users", json=user_data, timeout=5)
+                                
+                                if response.status_code == 200:
+                                    user_id = response.json().get('user_id')
+                                    
+                                    # 설비 할당
+                                    if selected_equipment and user_id:
+                                        for eq_assignment in selected_equipment:
+                                            try:
+                                                assignment_data = {
+                                                    "equipment_id": eq_assignment["equipment_id"],
+                                                    "user_id": user_id,
+                                                    "role": eq_assignment["role"],
+                                                    "is_primary": eq_assignment["is_primary"]
+                                                }
+                                                requests.post(f"{API_BASE_URL}/equipment/{eq_assignment['equipment_id']}/users", 
+                                                            json=assignment_data, timeout=5)
+                                            except:
+                                                pass
+                                    
+                                    st.success(f"관리자 '{manager_name}' 등록 요청이 완료되었습니다.")
+                                    st.session_state.show_equipment_manager_modal = False
+                                    st.rerun()
+                                else:
+                                    error_msg = response.json().get('detail', '관리자 등록에 실패했습니다.')
+                                    st.error(f"등록 실패: {error_msg}")
+                            except Exception as e:
+                                st.error(f"API 호출 오류: {e}")
+                        else:
+                            st.error("이름과 전화번호는 필수 입력 항목입니다.")
+        
+        # ======================
+        # 설비 관리자 목록 보기
+        # ======================
+        if st.session_state.get('show_equipment_manager_list', False):
+            with st.container():
+                st.markdown("---")
+                st.markdown("### 📋 설비 관리자 목록")
+                
+                try:
+                    # 사용자 목록 조회
+                    users = get_users_from_api(use_real_api)
+                    
+                    if users:
+                        # 간단한 관리자 목록 표시
+                        table_data = []
+                        for user in users[:10]:  # 최대 10명만 표시
+                            # 담당 설비 정보 가져오기
+                            try:
+                                user_equipment = get_equipment_users_by_user(user['id'])
+                                equipment_names = [eq['equipment_name'] for eq in user_equipment] if user_equipment else []
+                            except:
+                                equipment_names = []
+                            
+                            status_icon = "🟢" if user.get('is_active', True) else "🔴"
+                            status_text = "활성" if user.get('is_active', True) else "비활성"
+                            
+                            table_data.append({
+                                "이름": user['name'],
+                                "부서": user.get('department', '-'),
+                                "상태": f"{status_icon} {status_text}",
+                                "담당 설비": ", ".join(equipment_names[:2]) + ("..." if len(equipment_names) > 2 else ""),
+                                "설비 수": len(equipment_names)
+                            })
+                        
+                        if table_data:
+                            df = pd.DataFrame(table_data)
+                            st.dataframe(df, use_container_width=True, height=300)
+                        else:
+                            st.info("등록된 관리자가 없습니다.")
+                    else:
+                        st.info("관리자 데이터를 불러올 수 없습니다.")
+                        
+                except Exception as e:
+                    st.error(f"관리자 목록 조회 오류: {e}")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("➕ 새 관리자 등록", type="primary", use_container_width=True, key="new_manager_from_list"):
+                        st.session_state.show_equipment_manager_list = False
+                        st.session_state.show_equipment_manager_modal = True
+                        st.rerun()
+                
+                with col2:
+                    if st.button("❌ 닫기", use_container_width=True, key="close_manager_list"):
+                        st.session_state.show_equipment_manager_list = False
+                        st.rerun()
 
     with tabs[2]:  # 알림 관리
         st.markdown('<div class="main-header no-translate" translate="no">🚨 알림 관리</div>', unsafe_allow_html=True)
@@ -4009,29 +4204,380 @@ def main():
                 st.success("데이터 설정이 저장되었습니다.")
         
         with settings_tab4:
-            st.markdown("### 👤 사용자 설정")
+            st.markdown("### 👤 사용자 관리")
             
-            col1, col2 = st.columns(2)
+            # 사용자 관리 탭
+            user_tab1, user_tab2, user_tab3, user_tab4 = st.tabs(["사용자 목록", "새 사용자 등록", "알림 구독 관리", "설비별 할당 현황"])
             
-            with col1:
-                st.markdown("**사용자 정보**")
-                username = st.text_input("사용자명", value="관리자", key="username")
-                email = st.text_input("이메일", value="admin@posco.com", key="email")
-                department = st.selectbox("부서", ["생산관리팀", "품질관리팀", "설비관리팀", "기술팀"], index=0, key="department")
-                role = st.selectbox("권한", ["관리자", "운영자", "감시자"], index=0, key="role")
-            
-            with col2:
-                st.markdown("**보안 설정**")
-                change_password = st.button("비밀번호 변경", key="change_password")
-                two_factor_auth = st.checkbox("2단계 인증", value=False, key="two_factor_auth")
-                session_timeout = st.selectbox("세션 타임아웃", ["30분", "1시간", "4시간", "8시간"], index=1, key="session_timeout")
+            with user_tab1:
+                st.markdown("**📋 등록된 사용자 목록**")
                 
-                st.markdown("**개인화 설정**")
-                default_dashboard = st.selectbox("기본 대시보드", ["메인 대시보드", "설비 관리", "알림 관리", "리포트"], index=0, key="default_dashboard")
-                favorite_equipment = st.multiselect("관심 설비", ["프레스기 #1", "용접기 #2", "조립기 #3", "검사기 #4"], key="favorite_equipment")
+                # 사용자 목록 조회
+                users = get_users_from_api(use_real_api)
+                
+                if users:
+                    # 사용자 목록 표시
+                    users_data = []
+                    for user in users:
+                        status_icon = "🟢" if user['is_active'] else "🔴"
+                        users_data.append({
+                            "ID": user['id'],
+                            "이름": user['name'],
+                            "전화번호": user['phone_number'],
+                            "부서": user['department'] or "-",
+                            "권한": user['role'],
+                            "상태": f"{status_icon} {'활성' if user['is_active'] else '비활성'}",
+                            "등록일": user['created_at'][:10] if user['created_at'] else "-"
+                        })
+                    
+                    users_df = pd.DataFrame(users_data)
+                    st.dataframe(users_df, use_container_width=True, height=300)
+                    
+                    # 사용자 상세 정보
+                    if users:
+                        st.markdown("**👤 사용자 상세 정보**")
+                        selected_user_id = st.selectbox(
+                            "사용자 선택",
+                            options=[(u['id'], u['name']) for u in users],
+                            format_func=lambda x: x[1],
+                            key="user_detail_select"
+                        )
+                        
+                        if selected_user_id:
+                            selected_user = next((u for u in users if u['id'] == selected_user_id[0]), None)
+                            if selected_user:
+                                col1, col2 = st.columns(2)
+                                
+                                with col1:
+                                    st.write(f"**이름:** {selected_user['name']}")
+                                    st.write(f"**전화번호:** {selected_user['phone_number']}")
+                                    st.write(f"**부서:** {selected_user['department'] or '-'}")
+                                
+                                with col2:
+                                    st.write(f"**권한:** {selected_user['role']}")
+                                    st.write(f"**상태:** {'활성' if selected_user['is_active'] else '비활성'}")
+                                    st.write(f"**등록일:** {selected_user['created_at'][:10] if selected_user['created_at'] else '-'}")
+                                
+                                # 담당 설비 목록
+                                user_equipment = get_equipment_users_by_user(selected_user['id'])
+                                if user_equipment:
+                                    st.markdown("**🏭 담당 설비**")
+                                    equipment_data = []
+                                    for eq in user_equipment:
+                                        role_icon = "👑" if eq.get('is_primary', False) else "👤"
+                                        equipment_data.append({
+                                            "설비명": eq['equipment_name'],
+                                            "설비타입": eq['equipment_type'],
+                                            "역할": f"{role_icon} {eq['role']}",
+                                            "주담당자": "예" if eq.get('is_primary', False) else "아니오"
+                                        })
+                                    
+                                    equipment_df = pd.DataFrame(equipment_data)
+                                    st.dataframe(equipment_df, use_container_width=True, height=150)
+                                else:
+                                    st.info("담당 설비가 없습니다.")
+                else:
+                    st.info("등록된 사용자가 없습니다.")
             
-            if st.button("사용자 설정 저장", key="save_user_settings"):
-                st.success("사용자 설정이 저장되었습니다.")
+            with user_tab2:
+                st.markdown("**➕ 새 사용자 등록**")
+                
+                with st.form("new_user_form"):
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        new_user_name = st.text_input("이름 *", key="new_user_name")
+                        new_user_phone = st.text_input("전화번호 *", key="new_user_phone")
+                        new_user_department = st.selectbox(
+                            "부서",
+                            ["생산관리팀", "품질관리팀", "설비관리팀", "기술팀", "IT팀", "기타"],
+                            key="new_user_department"
+                        )
+                    
+                    with col2:
+                        new_user_role = st.selectbox(
+                            "권한",
+                            ["user", "manager", "admin"],
+                            format_func=lambda x: {"user": "일반 사용자", "manager": "관리자", "admin": "시스템 관리자"}[x],
+                            key="new_user_role"
+                        )
+                        
+                        # 기본 알림 구독 설정
+                        st.markdown("**🔔 기본 알림 설정**")
+                        default_error_alerts = st.checkbox("긴급 알림 (Error)", value=True, key="default_error_alerts")
+                        default_warning_alerts = st.checkbox("주의 알림 (Warning)", value=False, key="default_warning_alerts")
+                        default_info_alerts = st.checkbox("정보 알림 (Info)", value=False, key="default_info_alerts")
+                    
+                    submitted = st.form_submit_button("사용자 등록")
+                    
+                    if submitted:
+                        if new_user_name and new_user_phone:
+                            # 사용자 등록 API 호출
+                            try:
+                                user_data = {
+                                    "phone_number": new_user_phone,
+                                    "name": new_user_name,
+                                    "department": new_user_department,
+                                    "role": new_user_role
+                                }
+                                
+                                response = requests.post(f"{API_BASE_URL}/users", json=user_data, timeout=5)
+                                
+                                if response.status_code == 200:
+                                    st.success(f"사용자 '{new_user_name}'이(가) 등록되었습니다.")
+                                    st.rerun()
+                                else:
+                                    error_msg = response.json().get('detail', '사용자 등록에 실패했습니다.')
+                                    st.error(f"등록 실패: {error_msg}")
+                            except Exception as e:
+                                st.error(f"API 호출 오류: {e}")
+                        else:
+                            st.error("이름과 전화번호는 필수 입력 항목입니다.")
+                
+                # 사용자 수정/삭제 기능 추가
+                st.markdown("**✏️ 사용자 정보 수정**")
+                
+                if users:
+                    user_to_edit = st.selectbox(
+                        "수정할 사용자 선택",
+                        options=[(u['id'], u['name']) for u in users],
+                        format_func=lambda x: x[1],
+                        key="edit_user_select"
+                    )
+                    
+                    if user_to_edit:
+                        selected_user = next((u for u in users if u['id'] == user_to_edit[0]), None)
+                        if selected_user:
+                            col1, col2 = st.columns(2)
+                            
+                            with col1:
+                                edit_name = st.text_input("이름", value=selected_user['name'], key="edit_name")
+                                edit_phone = st.text_input("전화번호", value=selected_user['phone_number'], key="edit_phone")
+                                edit_department = st.selectbox(
+                                    "부서",
+                                    ["생산관리팀", "품질관리팀", "설비관리팀", "기술팀", "IT팀", "기타"],
+                                    index=["생산관리팀", "품질관리팀", "설비관리팀", "기술팀", "IT팀", "기타"].index(selected_user['department']) if selected_user['department'] in ["생산관리팀", "품질관리팀", "설비관리팀", "기술팀", "IT팀", "기타"] else 0,
+                                    key="edit_department"
+                                )
+                            
+                            with col2:
+                                edit_role = st.selectbox(
+                                    "권한",
+                                    ["user", "manager", "admin"],
+                                    format_func=lambda x: {"user": "일반 사용자", "manager": "관리자", "admin": "시스템 관리자"}[x],
+                                    index=["user", "manager", "admin"].index(selected_user['role']),
+                                    key="edit_role"
+                                )
+                                edit_active = st.checkbox("활성 상태", value=selected_user['is_active'], key="edit_active")
+                            
+                            col1, col2 = st.columns(2)
+                            
+                            with col1:
+                                if st.button("정보 수정", key="update_user_btn"):
+                                    try:
+                                        update_data = {
+                                            "name": edit_name,
+                                            "department": edit_department,
+                                            "role": edit_role,
+                                            "is_active": edit_active
+                                        }
+                                        
+                                        response = requests.put(f"{API_BASE_URL}/users/{selected_user['id']}", 
+                                                              json=update_data, timeout=5)
+                                        
+                                        if response.status_code == 200:
+                                            st.success("사용자 정보가 수정되었습니다.")
+                                            st.rerun()
+                                        else:
+                                            error_msg = response.json().get('detail', '사용자 수정에 실패했습니다.')
+                                            st.error(f"수정 실패: {error_msg}")
+                                    except Exception as e:
+                                        st.error(f"API 호출 오류: {e}")
+                            
+                            with col2:
+                                if st.button("사용자 삭제", key="delete_user_btn", type="secondary"):
+                                    if st.checkbox("정말 삭제하시겠습니까?", key="confirm_delete"):
+                                        try:
+                                            response = requests.delete(f"{API_BASE_URL}/users/{selected_user['id']}", timeout=5)
+                                            
+                                            if response.status_code == 200:
+                                                st.success("사용자가 삭제되었습니다.")
+                                                st.rerun()
+                                            else:
+                                                error_msg = response.json().get('detail', '사용자 삭제에 실패했습니다.')
+                                                st.error(f"삭제 실패: {error_msg}")
+                                        except Exception as e:
+                                            st.error(f"API 호출 오류: {e}")
+                else:
+                    st.info("수정할 사용자가 없습니다.")
+            
+            with user_tab3:
+                st.markdown("**🔔 알림 구독 관리**")
+                
+                if users:
+                    # 사용자별 알림 구독 설정
+                    subscription_user = st.selectbox(
+                        "구독 설정할 사용자 선택",
+                        options=[(u['id'], u['name']) for u in users],
+                        format_func=lambda x: x[1],
+                        key="subscription_user_select"
+                    )
+                    
+                    if subscription_user:
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.markdown("**알림 구독 설정**")
+                            sub_equipment = st.selectbox(
+                                "설비 (전체: None)",
+                                options=[None] + [eq['id'] for eq in equipment_list] if 'equipment_list' in locals() else [None],
+                                format_func=lambda x: "전체 설비" if x is None else x,
+                                key="sub_equipment"
+                            )
+                            
+                            sub_sensor_type = st.selectbox(
+                                "센서 타입 (전체: None)",
+                                options=[None, "temperature", "pressure", "vibration", "power"],
+                                format_func=lambda x: "전체 센서" if x is None else x,
+                                key="sub_sensor_type"
+                            )
+                        
+                        with col2:
+                            sub_severity = st.selectbox(
+                                "심각도",
+                                ["error", "warning", "info"],
+                                format_func=lambda x: {"error": "긴급", "warning": "주의", "info": "정보"}[x],
+                                key="sub_severity"
+                            )
+                            
+                            sub_active = st.checkbox("구독 활성화", value=True, key="sub_active")
+                        
+                        if st.button("구독 설정 추가", key="add_subscription_btn"):
+                            try:
+                                subscription_data = {
+                                    "user_id": subscription_user[0],
+                                    "equipment": sub_equipment,
+                                    "sensor_type": sub_sensor_type,
+                                    "severity": sub_severity,
+                                    "is_active": sub_active
+                                }
+                                
+                                response = requests.post(f"{API_BASE_URL}/users/{subscription_user[0]}/subscriptions", 
+                                                       json=subscription_data, timeout=5)
+                                
+                                if response.status_code == 200:
+                                    st.success("알림 구독이 설정되었습니다.")
+                                    st.rerun()
+                                else:
+                                    error_msg = response.json().get('detail', '구독 설정에 실패했습니다.')
+                                    st.error(f"구독 설정 실패: {error_msg}")
+                            except Exception as e:
+                                st.error(f"API 호출 오류: {e}")
+                
+                # 구독 설정 목록 조회
+                st.markdown("**📋 현재 구독 설정 목록**")
+                try:
+                    response = requests.get(f"{API_BASE_URL}/users", timeout=5)
+                    if response.status_code == 200:
+                        all_users = response.json()['users']
+                        for user in all_users:
+                            try:
+                                sub_response = requests.get(f"{API_BASE_URL}/users/{user['id']}/subscriptions", timeout=5)
+                                if sub_response.status_code == 200:
+                                    subscriptions = sub_response.json()['subscriptions']
+                                    if subscriptions:
+                                        st.write(f"**{user['name']}** ({user['phone_number']})")
+                                        for sub in subscriptions:
+                                            status_icon = "🟢" if sub['is_active'] else "🔴"
+                                            st.write(f"  {status_icon} {sub['equipment'] or '전체'} | {sub['sensor_type'] or '전체'} | {sub['severity']}")
+                            except:
+                                pass
+                except:
+                    st.info("구독 설정 정보를 불러올 수 없습니다.")
+            
+            with user_tab4:
+                st.markdown("**📊 설비별 사용자 할당 현황**")
+                
+                # 할당 요약 정보
+                summary = get_equipment_users_summary_api(use_real_api)
+                
+                if summary and 'summary' in summary:
+                    # 전체 통계
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        st.metric("전체 설비", summary['equipment_count'])
+                    
+                    with col2:
+                        st.metric("총 할당", summary['total_assignments'])
+                    
+                    with col3:
+                        st.metric("주담당자", summary['total_primary_users'])
+                    
+                    with col4:
+                        avg_assignments = summary['total_assignments'] / summary['equipment_count'] if summary['equipment_count'] > 0 else 0
+                        st.metric("평균 할당", f"{avg_assignments:.1f}")
+                    
+                    # 설비별 상세 현황
+                    st.markdown("**🏭 설비별 상세 현황**")
+                    summary_data = []
+                    for item in summary['summary']:
+                        summary_data.append({
+                            "설비명": item['equipment_name'],
+                            "설비타입": item['equipment_type'],
+                            "총 할당": item['user_count'],
+                            "주담당자": item['primary_user_count'],
+                            "일반 담당자": item['user_count'] - item['primary_user_count']
+                        })
+                    
+                    if summary_data:
+                        summary_df = pd.DataFrame(summary_data)
+                        st.dataframe(summary_df, use_container_width=True, height=300)
+                    else:
+                        st.info("할당 현황 정보가 없습니다.")
+                else:
+                    st.info("할당 현황 정보를 불러올 수 없습니다.")
+            
+            # SMS 이력 조회 탭 추가
+            st.markdown("**📱 SMS 전송 이력**")
+            
+            try:
+                response = requests.get(f"{API_BASE_URL}/sms/history?limit=50", timeout=5)
+                if response.status_code == 200:
+                    sms_history = response.json()['history']
+                    
+                    if sms_history:
+                        # SMS 이력 데이터프레임 생성
+                        sms_data = []
+                        for sms in sms_history:
+                            status_icon = "✅" if sms['status'] == 'sent' else "❌"
+                            sms_data.append({
+                                "사용자": sms['user_name'],
+                                "전화번호": sms['phone_number'],
+                                "상태": f"{status_icon} {sms['status']}",
+                                "전송시간": sms['sent_at'][:19] if sms['sent_at'] else "-",
+                                "메시지": sms['message'][:50] + "..." if len(sms['message']) > 50 else sms['message']
+                            })
+                        
+                        sms_df = pd.DataFrame(sms_data)
+                        st.dataframe(sms_df, use_container_width=True, height=400)
+                        
+                        # SMS 통계
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("총 전송", len(sms_history))
+                        with col2:
+                            success_count = sum(1 for sms in sms_history if sms['status'] == 'sent')
+                            st.metric("성공", success_count)
+                        with col3:
+                            failed_count = len(sms_history) - success_count
+                            st.metric("실패", failed_count)
+                    else:
+                        st.info("SMS 전송 이력이 없습니다.")
+                else:
+                    st.info("SMS 이력을 불러올 수 없습니다.")
+            except Exception as e:
+                st.error(f"SMS 이력 조회 오류: {e}")
         
         # 시스템 정보
         st.markdown("### ℹ️ 시스템 정보")

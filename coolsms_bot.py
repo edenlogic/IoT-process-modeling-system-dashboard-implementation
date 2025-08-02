@@ -116,7 +116,7 @@ class MemoryStorage:
         self.load_subscribers()
         
     def should_send_notification(self, alert: Alert) -> Tuple[bool, str]:
-        """알림 전송 여부 판단 - 테스트를 위해 간소화"""
+        """알림 전송 여부 판단"""
         # FastAPI에서 이미 필터링했으므로 CoolSMS에서는 모두 통과
         return True, "FastAPI에서 이미 검증됨"
         
@@ -194,10 +194,10 @@ class CoolSMSService:
         except:
             short_url = "링크 생성 실패"
         
-        # 메시지 구성 (전체 정보 포함)
+        # 메시지 구성 (원하는 포맷)
         message = f"{current_time}\n"
         message += f"{equipment} {severity_code}\n"
-        message += f"{sensor_short}:{alert.value:.1f}>{alert.threshold:.1f}\n"
+        message += f"{sensor_short}: {alert.value:.1f} > {alert.threshold:.1f}(임계값)\n"
         message += f"{short_url}"
             
         return message
@@ -259,6 +259,7 @@ class FastAPIMonitor:
         self.running = False
         self.processed_alerts = set()
         self.start_time = datetime.now()
+        logger.info(f"🕐 모니터링 시작 시간: {self.start_time.strftime('%H:%M:%S')}")
         
     async def monitor_alerts(self):
         """알림 모니터링"""
@@ -281,20 +282,35 @@ class FastAPIMonitor:
                 if response.status_code == 200:
                     api_alerts = response.json()
                     
-                    # ===== 여기에 디버그 로그 추가 (모든 수신 알람 로그) =====
+                    # 새 알림이 있을 때만 로그 출력
                     if api_alerts:
-                        logger.debug(f"[API 응답] 총 {len(api_alerts)}개 알람 수신")
-                        for idx, api_alert in enumerate(api_alerts):
-                            logger.debug(f"  [{idx+1}] {api_alert.get('equipment')} / {api_alert.get('sensor_type')} "
-                                    f"- severity={api_alert.get('severity')} value={api_alert.get('value')}")
+                        # 5초 이내의 알림만 카운트
+                        recent_alerts = []
+                        for api_alert in api_alerts:
+                            try:
+                                alert_time = datetime.fromisoformat(api_alert.get('timestamp', '').replace('Z', '+00:00'))
+                                if alert_time >= self.start_time and alert_time >= datetime.now() - timedelta(seconds=5):
+                                    recent_alerts.append(api_alert)
+                            except:
+                                pass
+                        
+                        if recent_alerts:
+                            logger.info(f"[API 응답] 최근 알림 {len(recent_alerts)}개 발견")
+                        else:
+                            logger.debug(f"[API 응답] 총 {len(api_alerts)}개 알람 수신 (모두 이전 알림)")
                     
                     for api_alert in api_alerts:
                         alert_time_str = api_alert.get('timestamp', '')
                         try:
                             alert_time = datetime.fromisoformat(alert_time_str.replace('Z', '+00:00'))
-                            five_minutes_ago = datetime.now() - timedelta(minutes=5)
                             
-                            if alert_time < five_minutes_ago:
+                            # 봇 시작 시간 이후의 알림만 처리
+                            if alert_time < self.start_time:
+                                continue
+                                
+                            # 5초 이내의 알림만 처리 (빠른 대응)
+                            five_seconds_ago = datetime.now() - timedelta(seconds=5)
+                            if alert_time < five_seconds_ago:
                                 continue
                                 
                         except Exception as e:
