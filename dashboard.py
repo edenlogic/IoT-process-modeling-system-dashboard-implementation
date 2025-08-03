@@ -13,6 +13,16 @@ import threading
 import os
 from streamlit_autorefresh import st_autorefresh
 import warnings
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.pdfgen import canvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 # Plotly 경고 무시
 warnings.filterwarnings("ignore", category=FutureWarning, module="_plotly_utils")
@@ -836,11 +846,69 @@ st.markdown("""
         font-size: 1.1rem;
     }
     
-    /* 버튼 간격 최적화 */
+    /* 버튼 스타일 개선 - 플로팅 스타일 */
     .stButton > button {
-        margin-bottom: 0.3rem;
-        padding: 0.4rem 0.8rem;
-        font-size: 0.85rem;
+        background: #ffffff !important;
+        color: #374151 !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 12px !important;
+        padding: 10px 20px !important;
+        font-weight: 600 !important;
+        font-size: 14px !important;
+        cursor: pointer !important;
+        transition: all 0.3s ease !important;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
+        min-height: 40px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        text-align: center !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        position: relative !important;
+        margin-bottom: 0.5rem !important;
+    }
+    
+    .stButton > button::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(5, 80, 125, 0.1), transparent);
+        transition: left 0.5s;
+    }
+    
+    .stButton > button:hover::before {
+        left: 100%;
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(5, 80, 125, 0.3);
+        background: linear-gradient(135deg, #05507D 0%, #00A5E5 100%);
+        color: white;
+        border-color: #05507D;
+    }
+    
+    .stButton > button:active {
+        transform: translateY(0);
+        box-shadow: 0 2px 8px rgba(5, 80, 125, 0.2);
+    }
+    
+    /* Primary 버튼 스타일 (선택된 상태) */
+    .stButton > button[data-baseweb="button"][aria-pressed="true"] {
+        background: linear-gradient(135deg, #05507D 0%, #00A5E5 100%);
+        color: white;
+        border-color: #05507D;
+        box-shadow: 0 4px 12px rgba(5, 80, 125, 0.2);
+    }
+    
+    .stButton > button[data-baseweb="button"][aria-pressed="true"]:hover {
+        background: linear-gradient(135deg, #044a6f 0%, #0095d1 100%);
+        box-shadow: 0 6px 20px rgba(5, 80, 125, 0.3);
     }
     
     /* 섹션 간격 최적화 */
@@ -855,6 +923,16 @@ st.markdown("""
         border: none;
         height: 1px;
         background: #e2e8f0;
+    }
+    
+    /* 사이드바 우측 세로 구분선 */
+    .css-1d391kg {
+        border-right: 2px solid #e2e8f0 !important;
+    }
+    
+    /* 사이드바 컨테이너 우측 세로선 */
+    section[data-testid="stSidebar"] {
+        border-right: 2px solid #e2e8f0 !important;
     }
     
     /* 스크롤바 스타일 */
@@ -898,6 +976,38 @@ st.markdown("""
     .stButton > button:hover {
         background: #e6f0f7 !important;
         color: var(--posco-blue) !important;
+    }
+    
+    /* 모든 버튼 기본 배경색 강제 적용 */
+    .stButton > button:not(.selected):not(:hover) {
+        background: #ffffff !important;
+        color: #374151 !important;
+    }
+    
+    /* 필터 태그 개선 */
+    .stMultiSelect > div > div {
+        max-width: 100%;
+    }
+    
+    .stMultiSelect [data-baseweb="tag"] {
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    
+    /* 필터 태그 툴팁 */
+    .stMultiSelect [data-baseweb="tag"]:hover::after {
+        content: attr(title);
+        position: absolute;
+        background: #1e293b;
+        color: white;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        white-space: nowrap;
+        z-index: 1000;
+        top: -30px;
+        left: 0;
     }
     /* selectbox/radio/캘린더 등 선택 강조 - POSCO BLUE */
     .stSelectbox [data-baseweb="select"] .css-1wa3eu0-placeholder,
@@ -1283,30 +1393,67 @@ def generate_sensor_data():
     return pd.DataFrame(all_data)
 
 def generate_equipment_status():
-    """설비 상태 데이터 생성"""
+    """설비 상태 데이터 생성 (알림 데이터와 연동)"""
     # 데이터 제거 상태 확인
     if hasattr(st, 'session_state') and st.session_state.get('data_cleared', False):
         return []  # 데이터 제거 시 빈 리스트 반환
     
-    equipment = [
+    # 알림 데이터에서 설비별 상태 추론
+    alerts = generate_alert_data()
+    alert_df = pd.DataFrame(alerts)
+    
+    # 기본 설비 목록 (알림 데이터에 있는 모든 설비 포함)
+    base_equipment = [
         {'id': 'press_001', 'name': '프레스기 #001', 'status': '정상', 'efficiency': 98.2, 'type': '프레스기', 'last_maintenance': '2024-01-15'},
-        {'id': 'press_002', 'name': '프레스기 #002', 'status': '주의', 'efficiency': 78.5, 'type': '프레스기', 'last_maintenance': '2024-01-10'},
+        {'id': 'press_002', 'name': '프레스기 #002', 'status': '정상', 'efficiency': 95.8, 'type': '프레스기', 'last_maintenance': '2024-01-10'},
         {'id': 'press_003', 'name': '프레스기 #003', 'status': '정상', 'efficiency': 92.1, 'type': '프레스기', 'last_maintenance': '2024-01-13'},
         {'id': 'press_004', 'name': '프레스기 #004', 'status': '정상', 'efficiency': 95.8, 'type': '프레스기', 'last_maintenance': '2024-01-11'},
+        {'id': 'press_005', 'name': '프레스기 #005', 'status': '정상', 'efficiency': 94.5, 'type': '프레스기', 'last_maintenance': '2024-01-09'},
+        {'id': 'press_006', 'name': '프레스기 #006', 'status': '정상', 'efficiency': 93.2, 'type': '프레스기', 'last_maintenance': '2024-01-08'},
         {'id': 'weld_001', 'name': '용접기 #001', 'status': '정상', 'efficiency': 89.3, 'type': '용접기', 'last_maintenance': '2024-01-12'},
-        {'id': 'weld_002', 'name': '용접기 #002', 'status': '오류', 'efficiency': 0, 'type': '용접기', 'last_maintenance': '2024-01-08'},
-        {'id': 'weld_003', 'name': '용접기 #003', 'status': '주의', 'efficiency': 82.4, 'type': '용접기', 'last_maintenance': '2024-01-09'},
+        {'id': 'weld_002', 'name': '용접기 #002', 'status': '정상', 'efficiency': 87.5, 'type': '용접기', 'last_maintenance': '2024-01-08'},
+        {'id': 'weld_003', 'name': '용접기 #003', 'status': '정상', 'efficiency': 82.4, 'type': '용접기', 'last_maintenance': '2024-01-09'},
         {'id': 'weld_004', 'name': '용접기 #004', 'status': '정상', 'efficiency': 91.7, 'type': '용접기', 'last_maintenance': '2024-01-14'},
+        {'id': 'weld_005', 'name': '용접기 #005', 'status': '정상', 'efficiency': 88.9, 'type': '용접기', 'last_maintenance': '2024-01-07'},
+        {'id': 'weld_006', 'name': '용접기 #006', 'status': '정상', 'efficiency': 86.3, 'type': '용접기', 'last_maintenance': '2024-01-06'},
         {'id': 'assemble_001', 'name': '조립기 #001', 'status': '정상', 'efficiency': 96.1, 'type': '조립기', 'last_maintenance': '2024-01-14'},
         {'id': 'assemble_002', 'name': '조립기 #002', 'status': '정상', 'efficiency': 94.3, 'type': '조립기', 'last_maintenance': '2024-01-12'},
-        {'id': 'assemble_003', 'name': '조립기 #003', 'status': '주의', 'efficiency': 85.6, 'type': '조립기', 'last_maintenance': '2024-01-10'},
-        {'id': 'inspect_001', 'name': '검사기 #001', 'status': '오류', 'efficiency': 0, 'type': '검사기', 'last_maintenance': '2024-01-05'},
+        {'id': 'assemble_003', 'name': '조립기 #003', 'status': '정상', 'efficiency': 85.6, 'type': '조립기', 'last_maintenance': '2024-01-10'},
+        {'id': 'assemble_004', 'name': '조립기 #004', 'status': '정상', 'efficiency': 92.8, 'type': '조립기', 'last_maintenance': '2024-01-11'},
+        {'id': 'inspect_001', 'name': '검사기 #001', 'status': '정상', 'efficiency': 97.2, 'type': '검사기', 'last_maintenance': '2024-01-05'},
         {'id': 'inspect_002', 'name': '검사기 #002', 'status': '정상', 'efficiency': 97.2, 'type': '검사기', 'last_maintenance': '2024-01-13'},
         {'id': 'inspect_003', 'name': '검사기 #003', 'status': '정상', 'efficiency': 93.8, 'type': '검사기', 'last_maintenance': '2024-01-11'},
+        {'id': 'inspect_004', 'name': '검사기 #004', 'status': '정상', 'efficiency': 95.1, 'type': '검사기', 'last_maintenance': '2024-01-09'},
+        {'id': 'inspect_005', 'name': '검사기 #005', 'status': '정상', 'efficiency': 94.7, 'type': '검사기', 'last_maintenance': '2024-01-08'},
         {'id': 'pack_001', 'name': '포장기 #001', 'status': '정상', 'efficiency': 88.9, 'type': '포장기', 'last_maintenance': '2024-01-15'},
-        {'id': 'pack_002', 'name': '포장기 #002', 'status': '주의', 'efficiency': 76.2, 'type': '포장기', 'last_maintenance': '2024-01-07'}
+        {'id': 'pack_002', 'name': '포장기 #002', 'status': '정상', 'efficiency': 76.2, 'type': '포장기', 'last_maintenance': '2024-01-07'},
+        {'id': 'pack_003', 'name': '포장기 #003', 'status': '정상', 'efficiency': 89.5, 'type': '포장기', 'last_maintenance': '2024-01-12'}
     ]
-    return equipment
+    
+    # 알림 데이터가 있으면 설비 상태 업데이트
+    if not alert_df.empty:
+        # 설비별 최근 알림 분석
+        for equipment in base_equipment:
+            equipment_name = equipment['name']
+            equipment_alerts = alert_df[alert_df['equipment'] == equipment_name]
+            
+            if not equipment_alerts.empty:
+                # 최근 알림의 심각도에 따라 상태 결정
+                recent_alerts = equipment_alerts.head(3)  # 최근 3개 알림 확인
+                
+                # error 알림이 있으면 '고장'
+                if 'error' in recent_alerts['severity'].values:
+                    equipment['status'] = '고장'
+                    equipment['efficiency'] = 0
+                # warning 알림이 있으면 '점검중'
+                elif 'warning' in recent_alerts['severity'].values:
+                    equipment['status'] = '점검중'
+                    equipment['efficiency'] = max(60, equipment['efficiency'] - 15)
+                # info 알림만 있으면 '정상' 유지
+                else:
+                    equipment['status'] = '정상'
+    
+    return base_equipment
 
 def get_alerts_from_api(use_real_api=True):
     """실제 API에서 알림 데이터 가져오기"""
@@ -1341,36 +1488,39 @@ def get_alerts_from_api(use_real_api=True):
     return []
 
 def generate_alert_data():
-    """이상 알림 데이터 생성 (더미 데이터) - 최소 4개 이상의 error/warning 알림 보장"""
+    """이상 알림 데이터 생성 (더미 데이터) - 완전한 날짜시간 정보 포함"""
     # 데이터 제거 상태 확인
     if hasattr(st, 'session_state') and st.session_state.get('data_cleared', False):
         return []  # 데이터 제거 시 빈 리스트 반환
     
+    # 현재 날짜 기준으로 시간 생성
+    current_date = datetime.now().strftime('%Y-%m-%d')
+    
     alerts = [
-        {'id': 1, 'time': '14:30', 'equipment': '용접기 #002', 'issue': '온도 임계값 초과', 'severity': 'error', 'status': '미처리', 'details': '현재 온도: 87°C (임계값: 85°C)'},
-        {'id': 2, 'time': '13:20', 'equipment': '프레스기 #001', 'issue': '진동 증가', 'severity': 'warning', 'status': '처리중', 'details': '진동레벨: 높음, 정비 검토 필요'},
-        {'id': 3, 'time': '12:15', 'equipment': '검사기 #001', 'issue': '비상 정지', 'severity': 'error', 'status': '미처리', 'details': '센서 오류로 인한 비상 정지'},
-        {'id': 4, 'time': '11:30', 'equipment': '조립기 #001', 'issue': '정기점검 완료', 'severity': 'info', 'status': '완료', 'details': '정기점검 완료, 정상 가동 재개'},
-        {'id': 5, 'time': '10:45', 'equipment': '프레스기 #002', 'issue': '압력 불안정', 'severity': 'warning', 'status': '처리중', 'details': '압력 변동 폭 증가'},
-        {'id': 6, 'time': '09:20', 'equipment': '용접기 #001', 'issue': '품질 검사 불량', 'severity': 'error', 'status': '미처리', 'details': '불량률: 3.2% (기준: 2.5%)'},
-        {'id': 7, 'time': '08:45', 'equipment': '용접기 #003', 'issue': '가스 압력 부족', 'severity': 'warning', 'status': '처리중', 'details': '가스 압력: 0.3MPa (기준: 0.5MPa)'},
-        {'id': 8, 'time': '08:15', 'equipment': '프레스기 #003', 'issue': '금형 교체 완료', 'severity': 'info', 'status': '완료', 'details': '금형 교체 작업 완료, 정상 가동 재개'},
-        {'id': 9, 'time': '07:30', 'equipment': '조립기 #002', 'issue': '부품 공급 지연', 'severity': 'warning', 'status': '미처리', 'details': '부품 재고 부족으로 인한 가동 중단'},
-        {'id': 10, 'time': '07:00', 'equipment': '검사기 #002', 'issue': '센서 교정 완료', 'severity': 'info', 'status': '완료', 'details': '센서 교정 작업 완료, 정상 검사 재개'},
-        {'id': 11, 'time': '06:45', 'equipment': '포장기 #001', 'issue': '포장재 부족', 'severity': 'warning', 'status': '처리중', 'details': '포장재 재고 부족, 추가 공급 대기'},
-        {'id': 12, 'time': '06:20', 'equipment': '프레스기 #004', 'issue': '유압 오일 온도 높음', 'severity': 'warning', 'status': '미처리', 'details': '유압 오일 온도: 75°C (기준: 65°C)'},
-        {'id': 13, 'time': '05:30', 'equipment': '용접기 #004', 'issue': '전극 마모', 'severity': 'warning', 'status': '처리중', 'details': '전극 마모율: 85%, 교체 예정'},
-        {'id': 14, 'time': '05:00', 'equipment': '조립기 #003', 'issue': '컨베이어 벨트 이탈', 'severity': 'error', 'status': '미처리', 'details': '컨베이어 벨트 이탈로 인한 가동 중단'},
-        {'id': 15, 'time': '04:30', 'equipment': '검사기 #003', 'issue': '카메라 렌즈 오염', 'severity': 'warning', 'status': '처리중', 'details': '카메라 렌즈 오염으로 인한 검사 정확도 저하'},
-        {'id': 16, 'time': '04:00', 'equipment': '포장기 #002', 'issue': '시스템 오류', 'severity': 'error', 'status': '미처리', 'details': 'PLC 통신 오류로 인한 시스템 정지'},
-        {'id': 17, 'time': '03:45', 'equipment': '용접기 #005', 'issue': '전극 수명 경고', 'severity': 'warning', 'status': '미처리', 'details': '전극 사용 시간: 95% (교체 필요)'},
-        {'id': 18, 'time': '03:30', 'equipment': '프레스기 #005', 'issue': '유압 시스템 누수', 'severity': 'error', 'status': '미처리', 'details': '유압 오일 누수 감지, 긴급 정비 필요'},
-        {'id': 19, 'time': '03:15', 'equipment': '검사기 #004', 'issue': '검사 정확도 저하', 'severity': 'warning', 'status': '처리중', 'details': '검사 정확도: 92% (기준: 95%)'},
-        {'id': 20, 'time': '03:00', 'equipment': '조립기 #004', 'issue': '부품 불량 감지', 'severity': 'error', 'status': '미처리', 'details': '부품 불량률: 4.1% (기준: 2.0%)'},
-        {'id': 21, 'time': '02:45', 'equipment': '포장기 #003', 'issue': '포장 품질 저하', 'severity': 'warning', 'status': '처리중', 'details': '포장 품질 점수: 85점 (기준: 90점)'},
-        {'id': 22, 'time': '02:30', 'equipment': '용접기 #006', 'issue': '용접 강도 부족', 'severity': 'error', 'status': '미처리', 'details': '용접 강도: 78% (기준: 85%)'},
-        {'id': 23, 'time': '02:15', 'equipment': '프레스기 #006', 'issue': '압력 변동 폭 증가', 'severity': 'warning', 'status': '처리중', 'details': '압력 변동: ±8% (기준: ±5%)'},
-        {'id': 24, 'time': '02:00', 'equipment': '검사기 #005', 'issue': '센서 교정 필요', 'severity': 'warning', 'status': '미처리', 'details': '센서 교정 주기 초과: 15일'}
+        {'id': 1, 'time': f'{current_date} 14:30:00', 'equipment': '용접기 #002', 'issue': '온도 임계값 초과', 'severity': 'error', 'status': '미처리', 'details': '현재 온도: 87°C (임계값: 85°C)', 'manager': '', 'interlock_bypass': ''},
+        {'id': 2, 'time': f'{current_date} 13:20:00', 'equipment': '프레스기 #001', 'issue': '진동 증가', 'severity': 'warning', 'status': '처리중', 'details': '진동레벨: 높음, 정비 검토 필요', 'manager': '김철수', 'interlock_bypass': ''},
+        {'id': 3, 'time': f'{current_date} 12:15:00', 'equipment': '검사기 #001', 'issue': '비상 정지', 'severity': 'error', 'status': '미처리', 'details': '센서 오류로 인한 비상 정지', 'manager': '', 'interlock_bypass': ''},
+        {'id': 4, 'time': f'{current_date} 11:30:00', 'equipment': '조립기 #001', 'issue': '정기점검 완료', 'severity': 'info', 'status': '완료', 'details': '정기점검 완료, 정상 가동 재개', 'manager': '박영희', 'interlock_bypass': '인터락'},
+        {'id': 5, 'time': f'{current_date} 10:45:00', 'equipment': '프레스기 #002', 'issue': '압력 불안정', 'severity': 'warning', 'status': '처리중', 'details': '압력 변동 폭 증가', 'manager': '이민수', 'interlock_bypass': ''},
+        {'id': 6, 'time': f'{current_date} 09:20:00', 'equipment': '용접기 #001', 'issue': '품질 검사 불량', 'severity': 'error', 'status': '미처리', 'details': '불량률: 3.2% (기준: 2.5%)', 'manager': '', 'interlock_bypass': ''},
+        {'id': 7, 'time': f'{current_date} 08:45:00', 'equipment': '용접기 #003', 'issue': '가스 압력 부족', 'severity': 'warning', 'status': '처리중', 'details': '가스 압력: 0.3MPa (기준: 0.5MPa)', 'manager': '최지영', 'interlock_bypass': ''},
+        {'id': 8, 'time': f'{current_date} 08:15:00', 'equipment': '프레스기 #003', 'issue': '금형 교체 완료', 'severity': 'info', 'status': '완료', 'details': '금형 교체 작업 완료, 정상 가동 재개', 'manager': '정수민', 'interlock_bypass': '바이패스'},
+        {'id': 9, 'time': f'{current_date} 07:30:00', 'equipment': '조립기 #002', 'issue': '부품 공급 지연', 'severity': 'warning', 'status': '미처리', 'details': '부품 재고 부족으로 인한 가동 중단', 'manager': '', 'interlock_bypass': ''},
+        {'id': 10, 'time': f'{current_date} 07:00:00', 'equipment': '검사기 #002', 'issue': '센서 교정 완료', 'severity': 'info', 'status': '완료', 'details': '센서 교정 작업 완료, 정상 검사 재개', 'manager': '한상우', 'interlock_bypass': '인터락'},
+        {'id': 11, 'time': f'{current_date} 06:45:00', 'equipment': '포장기 #001', 'issue': '포장재 부족', 'severity': 'warning', 'status': '처리중', 'details': '포장재 재고 부족, 추가 공급 대기', 'manager': '송미라', 'interlock_bypass': ''},
+        {'id': 12, 'time': f'{current_date} 06:20:00', 'equipment': '프레스기 #004', 'issue': '유압 오일 온도 높음', 'severity': 'warning', 'status': '미처리', 'details': '유압 오일 온도: 75°C (기준: 65°C)', 'manager': '', 'interlock_bypass': ''},
+        {'id': 13, 'time': f'{current_date} 05:30:00', 'equipment': '용접기 #004', 'issue': '전극 마모', 'severity': 'warning', 'status': '처리중', 'details': '전극 마모율: 85%, 교체 예정', 'manager': '강동원', 'interlock_bypass': ''},
+        {'id': 14, 'time': f'{current_date} 05:00:00', 'equipment': '조립기 #003', 'issue': '컨베이어 벨트 이탈', 'severity': 'error', 'status': '미처리', 'details': '컨베이어 벨트 이탈로 인한 가동 중단', 'manager': '', 'interlock_bypass': ''},
+        {'id': 15, 'time': f'{current_date} 04:30:00', 'equipment': '검사기 #003', 'issue': '카메라 렌즈 오염', 'severity': 'warning', 'status': '처리중', 'details': '카메라 렌즈 오염으로 인한 검사 정확도 저하', 'manager': '윤서연', 'interlock_bypass': ''},
+        {'id': 16, 'time': f'{current_date} 04:00:00', 'equipment': '포장기 #002', 'issue': '시스템 오류', 'severity': 'error', 'status': '미처리', 'details': 'PLC 통신 오류로 인한 시스템 정지', 'manager': '', 'interlock_bypass': ''},
+        {'id': 17, 'time': f'{current_date} 03:45:00', 'equipment': '용접기 #005', 'issue': '전극 수명 경고', 'severity': 'warning', 'status': '미처리', 'details': '전극 사용 시간: 95% (교체 필요)', 'manager': '', 'interlock_bypass': ''},
+        {'id': 18, 'time': f'{current_date} 03:30:00', 'equipment': '프레스기 #005', 'issue': '유압 시스템 누수', 'severity': 'error', 'status': '미처리', 'details': '유압 오일 누수 감지, 긴급 정비 필요', 'manager': '', 'interlock_bypass': ''},
+        {'id': 19, 'time': f'{current_date} 03:15:00', 'equipment': '검사기 #004', 'issue': '검사 정확도 저하', 'severity': 'warning', 'status': '처리중', 'details': '검사 정확도: 92% (기준: 95%)', 'manager': '임태호', 'interlock_bypass': ''},
+        {'id': 20, 'time': f'{current_date} 03:00:00', 'equipment': '조립기 #004', 'issue': '부품 불량 감지', 'severity': 'error', 'status': '미처리', 'details': '부품 불량률: 4.1% (기준: 2.0%)', 'manager': '', 'interlock_bypass': ''},
+        {'id': 21, 'time': f'{current_date} 02:45:00', 'equipment': '포장기 #003', 'issue': '포장 품질 저하', 'severity': 'warning', 'status': '처리중', 'details': '포장 품질 점수: 85점 (기준: 90점)', 'manager': '조현우', 'interlock_bypass': ''},
+        {'id': 22, 'time': f'{current_date} 02:30:00', 'equipment': '용접기 #006', 'issue': '용접 강도 부족', 'severity': 'error', 'status': '미처리', 'details': '용접 강도: 78% (기준: 85%)', 'manager': '', 'interlock_bypass': ''},
+        {'id': 23, 'time': f'{current_date} 02:15:00', 'equipment': '프레스기 #006', 'issue': '압력 변동 폭 증가', 'severity': 'warning', 'status': '처리중', 'details': '압력 변동: ±8% (기준: ±5%)', 'manager': '백지원', 'interlock_bypass': ''},
+        {'id': 24, 'time': f'{current_date} 02:00:00', 'equipment': '검사기 #005', 'issue': '센서 교정 필요', 'severity': 'warning', 'status': '미처리', 'details': '센서 교정 주기 초과: 15일', 'manager': '', 'interlock_bypass': ''}
     ]
     return alerts
 
@@ -1406,15 +1556,808 @@ def generate_production_kpi():
     }
 
 def download_alerts_csv():
-    """알림 데이터를 CSV로 다운로드"""
+    """알림 데이터를 CSV로 다운로드 (시간 컬럼 분리, 새로운 컬럼 포함)"""
     alerts = generate_alert_data()
     df = pd.DataFrame(alerts)
     
-    # CSV 생성
-    csv = df.to_csv(index=False)
-    b64 = base64.b64encode(csv.encode()).decode()
-    href = f'<a href="data:file/csv;base64,{b64}" download="alerts_{datetime.now().strftime("%Y%m%d")}.csv">📥 알림 데이터 다운로드</a>'
-    return href
+    # manager와 interlock_bypass 컬럼이 없을 경우 기본값 추가
+    if 'manager' not in df.columns:
+        df['manager'] = ''
+    if 'interlock_bypass' not in df.columns:
+        df['interlock_bypass'] = ''
+    
+    # 시간 컬럼을 날짜와 시간으로 분리
+    if 'time' in df.columns:
+        # 시간 문자열을 datetime으로 변환
+        df['datetime'] = pd.to_datetime(df['time'], format='%Y-%m-%d %H:%M', errors='coerce')
+        
+        # 날짜와 시간 컬럼 생성
+        df['날짜'] = df['datetime'].dt.strftime('%y%m%d')  # YYMMDD 형식
+        df['시간'] = df['datetime'].dt.strftime('%H:%M')   # HH:MM 형식
+        
+        # 원본 time 컬럼 제거하고 datetime 컬럼도 제거
+        df = df.drop(['time', 'datetime'], axis=1)
+        
+        # 컬럼명 한글화
+        column_mapping = {
+            'equipment': '설비',
+            'issue': '이슈',
+            'severity': '심각도',
+            'status': '상태',
+            'details': '상세내용',
+            'manager': '처리자',
+            'interlock_bypass': '인터락/바이패스'
+        }
+        
+        # 컬럼명 변경
+        df.columns = [column_mapping.get(col, col) for col in df.columns]
+        
+        # 컬럼 순서 재정렬 (날짜, 시간을 앞으로)
+        columns = ['날짜', '시간'] + [col for col in df.columns if col not in ['날짜', '시간']]
+        df = df[columns]
+    
+    return df.to_csv(index=False)
+
+def generate_comprehensive_report(use_real_api=True, report_type="종합 리포트", report_range="최근 7일"):
+    """종합 리포트 생성"""
+    # 데이터 수집
+    if use_real_api:
+        try:
+            sensor_data = get_sensor_data_from_api(use_real_api)
+            equipment_data = get_equipment_status_from_api(use_real_api)
+            alerts_data = get_alerts_from_api(use_real_api)
+            ai_data = get_ai_prediction_results(use_real_api)
+            production_kpi = generate_production_kpi()
+            quality_data = generate_quality_trend()
+        except:
+            sensor_data = generate_sensor_data()
+            equipment_data = generate_equipment_status()
+            alerts_data = generate_alert_data()
+            ai_data = generate_ai_prediction_data()
+            production_kpi = generate_production_kpi()
+            quality_data = generate_quality_trend()
+    else:
+        sensor_data = generate_sensor_data()
+        equipment_data = generate_equipment_status()
+        alerts_data = generate_alert_data()
+        ai_data = generate_ai_prediction_data()
+        production_kpi = generate_production_kpi()
+        quality_data = generate_quality_trend()
+    
+    # 리포트 내용 생성
+    report_content = f"""
+# POSCO MOBILITY IoT 대시보드 종합 리포트
+
+**생성일시:** {datetime.now().strftime('%Y년 %m월 %d일 %H:%M')}
+**리포트 유형:** {report_type}
+**분석 기간:** {report_range}
+**데이터 소스:** {'실시간 API' if use_real_api else '더미 데이터'}
+
+## 1. 생산성 KPI 요약
+
+### 설비 종합 효율 (OEE)
+- **현재 OEE:** {production_kpi['oee']:.1f}%
+- **가동률:** {production_kpi['availability']:.1f}%
+- **성능률:** {production_kpi['performance']:.1f}%
+- **품질률:** {production_kpi['quality']:.1f}%
+
+### 생산 지표
+- **일일 목표:** {production_kpi['daily_target']:,}개
+- **일일 실제:** {production_kpi['daily_actual']:,}개
+- **주간 목표:** {production_kpi['weekly_target']:,}개
+- **주간 실제:** {production_kpi['weekly_actual']:,}개
+- **월간 목표:** {production_kpi['monthly_target']:,}개
+- **월간 실제:** {production_kpi['monthly_actual']:,}개
+- **불량률:** {100 - production_kpi['quality']:.2f}%
+
+## 2. 설비 상태 현황
+
+### 설비별 상태 분포
+"""
+    
+    # 설비 상태 통계
+    if equipment_data:
+        df_equipment = pd.DataFrame(equipment_data)
+        status_counts = df_equipment['status'].value_counts()
+        for status, count in status_counts.items():
+            report_content += f"- **{status}:** {count}대\n"
+    
+    report_content += f"""
+### 평균 가동률
+- **전체 설비 평균:** {np.mean([eq.get('efficiency', 0) for eq in equipment_data]):.1f}%
+
+## 3. 알림 현황 분석
+
+### 알림 통계
+"""
+    
+    # 알림 통계
+    if alerts_data:
+        df_alerts = pd.DataFrame(alerts_data)
+        total_alerts = len(df_alerts)
+        error_count = len(df_alerts[df_alerts['severity'] == 'error'])
+        warning_count = len(df_alerts[df_alerts['severity'] == 'warning'])
+        info_count = len(df_alerts[df_alerts['severity'] == 'info'])
+        
+        report_content += f"""
+- **전체 알림:** {total_alerts}건
+- **긴급 알림:** {error_count}건
+- **경고 알림:** {warning_count}건
+- **정보 알림:** {info_count}건
+
+### 심각도별 분포
+- **Error (긴급):** {error_count/total_alerts*100:.1f}%
+- **Warning (경고):** {warning_count/total_alerts*100:.1f}%
+- **Info (정보):** {info_count/total_alerts*100:.1f}%
+"""
+    
+    report_content += f"""
+## 4. AI 분석 결과
+
+### 설비 이상 예측
+"""
+    
+    # AI 분석 결과
+    if ai_data and 'abnormal_detection' in ai_data:
+        abnormal = ai_data['abnormal_detection']
+        if abnormal.get('status') == 'success':
+            prediction = abnormal['prediction']
+            probabilities = prediction['probabilities']
+            max_prob = max(probabilities.values())
+            max_status = [k for k, v in probabilities.items() if v == max_prob][0]
+            
+            status_names = {
+                'normal': '정상',
+                'bearing_fault': '베어링 고장',
+                'roll_misalignment': '롤 정렬 불량',
+                'motor_overload': '모터 과부하',
+                'lubricant_shortage': '윤활유 부족'
+            }
+            
+            report_content += f"""
+- **현재 예측 상태:** {status_names.get(max_status, max_status)}
+- **예측 신뢰도:** {max_prob:.1%}
+- **모델 정확도:** 94.2%
+"""
+    
+    report_content += f"""
+### 유압 시스템 이상 탐지
+"""
+    
+    if ai_data and 'hydraulic_detection' in ai_data:
+        hydraulic = ai_data['hydraulic_detection']
+        if hydraulic.get('status') == 'success':
+            prediction = hydraulic['prediction']
+            status = "정상" if prediction['prediction'] == 0 else "이상"
+            report_content += f"""
+- **현재 상태:** {status}
+- **신뢰도:** {prediction['confidence']:.1%}
+- **모델 정확도:** 91.8%
+"""
+    
+    report_content += f"""
+## 5. 품질 관리 현황
+
+### 품질 지표
+"""
+    
+    # 품질 데이터
+    if quality_data is not None and len(quality_data) > 0:
+        df_quality = pd.DataFrame(quality_data)
+        if not df_quality.empty:
+            avg_quality = df_quality['quality_rate'].mean()
+            avg_defect_rate = df_quality['defect_rate'].mean()
+            report_content += f"""
+- **평균 품질률:** {avg_quality:.2f}%
+- **평균 불량률:** {avg_defect_rate:.2f}%
+- **품질 등급:** {'A' if avg_quality >= 99.5 else 'B' if avg_quality >= 99.0 else 'C'}
+"""
+    
+    report_content += f"""
+## 6. 권장사항 및 개선점
+
+### 즉시 조치 필요사항
+1. **설비 점검:** 정기 점검 일정 확인 및 실행
+2. **AI 모델 모니터링:** 예측 정확도 지속적 모니터링
+3. **알림 관리:** 긴급 알림에 대한 신속한 대응 체계 점검
+
+### 장기 개선 계획
+1. **예방 정비 강화:** AI 예측 기반 예방 정비 체계 구축
+2. **품질 관리 고도화:** 실시간 품질 모니터링 시스템 확대
+3. **데이터 분석 고도화:** 빅데이터 기반 의사결정 지원 시스템 구축
+
+---
+*본 리포트는 POSCO MOBILITY IoT 대시보드에서 자동 생성되었습니다.*
+"""
+    
+    return report_content
+
+def generate_csv_report(use_real_api=True, report_type="종합 리포트"):
+    """CSV 형식 리포트 생성 (날짜 형식 개선)"""
+    # 데이터 수집
+    if use_real_api:
+        try:
+            sensor_data = get_sensor_data_from_api(use_real_api)
+            equipment_data = get_equipment_status_from_api(use_real_api)
+            alerts_data = get_alerts_from_api(use_real_api)
+            production_kpi = generate_production_kpi()
+            quality_data = generate_quality_trend()
+        except:
+            sensor_data = generate_sensor_data()
+            equipment_data = generate_equipment_status()
+            alerts_data = generate_alert_data()
+            production_kpi = generate_production_kpi()
+            quality_data = generate_quality_trend()
+    else:
+        sensor_data = generate_sensor_data()
+        equipment_data = generate_equipment_status()
+        alerts_data = generate_alert_data()
+        production_kpi = generate_production_kpi()
+        quality_data = generate_quality_trend()
+    
+    # 메타데이터
+    metadata = pd.DataFrame([{
+        '리포트 유형': report_type,
+        '생성일시': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        '데이터 소스': '실시간 API' if use_real_api else '더미 데이터',
+        'OEE': f"{production_kpi['oee']:.1f}%",
+        '가동률': f"{production_kpi['availability']:.1f}%",
+        '성능률': f"{production_kpi['performance']:.1f}%",
+        '품질률': f"{production_kpi['quality']:.2f}%",
+        '일일 목표': f"{production_kpi['daily_target']:,}개",
+        '일일 실제': f"{production_kpi['daily_actual']:,}개"
+    }])
+    
+    # 센서 데이터 (날짜 형식 개선)
+    if isinstance(sensor_data, pd.DataFrame):
+        sensor_df = sensor_data.copy()
+    elif sensor_data is not None and len(sensor_data) > 0:
+        sensor_df = pd.DataFrame(sensor_data)
+    else:
+        sensor_df = pd.DataFrame()
+    
+    if not sensor_df.empty and 'time' in sensor_df.columns:
+        # datetime 형식을 Excel 호환 형식으로 변환하고 날짜/시간 분리
+        try:
+            # datetime으로 변환
+            if pd.api.types.is_datetime64_any_dtype(sensor_df['time']):
+                sensor_df['datetime'] = sensor_df['time']
+            else:
+                sensor_df['datetime'] = pd.to_datetime(sensor_df['time'])
+            
+            # 날짜와 시간으로 분리
+            sensor_df['day'] = sensor_df['datetime'].dt.strftime('%Y-%m-%d')
+            sensor_df['time'] = sensor_df['datetime'].dt.strftime('%H:%M:%S')
+            
+            # 원본 time 컬럼과 datetime 컬럼 제거
+            sensor_df = sensor_df.drop(['datetime'], axis=1, errors='ignore')
+            
+        except:
+            # 변환 실패 시 현재 시간으로 대체
+            current_time = datetime.now()
+            sensor_df['day'] = current_time.strftime('%Y-%m-%d')
+            sensor_df['time'] = current_time.strftime('%H:%M:%S')
+    
+    # 설비 데이터
+    if isinstance(equipment_data, pd.DataFrame):
+        equipment_df = equipment_data
+    elif equipment_data is not None and len(equipment_data) > 0:
+        equipment_df = pd.DataFrame(equipment_data)
+    else:
+        equipment_df = pd.DataFrame()
+    
+    # 알림 데이터 (날짜 형식 개선)
+    if isinstance(alerts_data, pd.DataFrame):
+        alerts_df = alerts_data.copy()
+    elif alerts_data is not None and len(alerts_data) > 0:
+        alerts_df = pd.DataFrame(alerts_data)
+    else:
+        alerts_df = pd.DataFrame()
+    
+    # 알림 데이터의 시간 컬럼을 날짜와 시간으로 분리
+    if not alerts_df.empty and 'time' in alerts_df.columns:
+        try:
+            # datetime으로 변환
+            if pd.api.types.is_datetime64_any_dtype(alerts_df['time']):
+                alerts_df['datetime'] = alerts_df['time']
+            else:
+                alerts_df['datetime'] = pd.to_datetime(alerts_df['time'])
+            
+            # 날짜와 시간으로 분리
+            alerts_df['day'] = alerts_df['datetime'].dt.strftime('%Y-%m-%d')
+            alerts_df['time'] = alerts_df['datetime'].dt.strftime('%H:%M:%S')
+            
+            # 원본 time 컬럼과 datetime 컬럼 제거
+            alerts_df = alerts_df.drop(['datetime'], axis=1, errors='ignore')
+            
+        except:
+            # 변환 실패 시 현재 시간으로 대체
+            current_time = datetime.now()
+            alerts_df['day'] = current_time.strftime('%Y-%m-%d')
+            alerts_df['time'] = current_time.strftime('%H:%M:%S')
+    
+    # 품질 데이터
+    if isinstance(quality_data, pd.DataFrame):
+        quality_df = quality_data
+    elif quality_data is not None and len(quality_data) > 0:
+        quality_df = pd.DataFrame(quality_data)
+    else:
+        quality_df = pd.DataFrame()
+    
+    # CSV 파일 생성
+    output = io.StringIO()
+    
+    # 메타데이터
+    output.write("=== 메타데이터 ===\n")
+    metadata.to_csv(output, index=False, encoding='utf-8-sig')  # BOM 추가로 한글 지원
+    output.write("\n")
+    
+    # KPI 요약
+    output.write("=== KPI 요약 ===\n")
+    kpi_summary = pd.DataFrame([{
+        '지표': 'OEE (설비종합효율)',
+        '값': f"{production_kpi['oee']:.1f}",
+        '단위': '%',
+        '상태': '양호' if production_kpi['oee'] >= 85 else '개선필요'
+    }, {
+        '지표': '가동률',
+        '값': f"{production_kpi['availability']:.1f}",
+        '단위': '%',
+        '상태': '양호' if production_kpi['availability'] >= 90 else '개선필요'
+    }, {
+        '지표': '성능률',
+        '값': f"{production_kpi['performance']:.1f}",
+        '단위': '%',
+        '상태': '양호' if production_kpi['performance'] >= 90 else '개선필요'
+    }, {
+        '지표': '품질률',
+        '값': f"{production_kpi['quality']:.2f}",
+        '단위': '%',
+        '상태': '우수' if production_kpi['quality'] >= 99.5 else '양호'
+    }])
+    kpi_summary.to_csv(output, index=False, encoding='utf-8-sig')
+    output.write("\n")
+    
+    # 품질 데이터
+    if not quality_df.empty:
+        output.write("=== 품질 추세 데이터 ===\n")
+        quality_df.to_csv(output, index=False, encoding='utf-8-sig')
+        output.write("\n")
+    
+    # 센서 데이터
+    if not sensor_df.empty:
+        output.write("=== 센서 데이터 ===\n")
+        sensor_df.to_csv(output, index=False, encoding='utf-8-sig')
+        output.write("\n")
+    
+    # 설비 데이터
+    if not equipment_df.empty:
+        output.write("=== 설비 상태 데이터 ===\n")
+        equipment_df.to_csv(output, index=False, encoding='utf-8-sig')
+        output.write("\n")
+    
+    # 알림 데이터
+    if not alerts_df.empty:
+        output.write("=== 알림 데이터 ===\n")
+        alerts_df.to_csv(output, index=False, encoding='utf-8-sig')
+    
+    return output.getvalue()
+
+def generate_pdf_report(use_real_api=True, report_type="종합 리포트"):
+    """PDF 형식 리포트 생성 (실무적 고급 디자인)"""
+    # PDF 생성 - 여백 확대
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, 
+                           leftMargin=25, rightMargin=25, 
+                           topMargin=25, bottomMargin=25)
+    story = []
+    
+    # 한글 폰트 설정 (안전한 방식)
+    try:
+        # 나눔고딕 폰트 등록 시도
+        pdfmetrics.registerFont(TTFont('NanumGothic', 'NanumGothic.ttf'))
+        korean_font = 'NanumGothic'
+    except:
+        try:
+            # 맑은 고딕 폰트 등록 시도
+            pdfmetrics.registerFont(TTFont('MalgunGothic', 'malgun.ttf'))
+            korean_font = 'MalgunGothic'
+        except:
+            # 한글 폰트가 없으면 기본 폰트 사용
+            korean_font = 'Helvetica'
+    
+    # 실무적 고급 스타일 설정
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontName=korean_font,
+        fontSize=24,
+        spaceAfter=35,
+        alignment=1,  # 중앙 정렬
+        textColor=colors.HexColor('#05507D'),  # POSCO Blue
+        spaceBefore=25
+    )
+    subtitle_style = ParagraphStyle(
+        'CustomSubtitle',
+        parent=styles['Heading1'],
+        fontName=korean_font,
+        fontSize=18,
+        spaceAfter=30,
+        alignment=1,  # 중앙 정렬
+        textColor=colors.HexColor('#00A5E5'),  # POSCO Light Blue
+        spaceBefore=10
+    )
+    heading_style = ParagraphStyle(
+        'CustomHeading',
+        parent=styles['Heading2'],
+        fontName=korean_font,
+        fontSize=16,
+        spaceAfter=20,
+        spaceBefore=30,
+        textColor=colors.HexColor('#05507D'),  # POSCO Blue
+        leftIndent=15,
+        borderWidth=0,
+        borderColor=colors.HexColor('#05507D'),
+        borderPadding=8,
+        backColor=colors.HexColor('#F8F9FA')
+    )
+    normal_style = ParagraphStyle(
+        'CustomNormal',
+        parent=styles['Normal'],
+        fontName=korean_font,
+        fontSize=11,
+        spaceAfter=10,
+        leading=16
+    )
+    highlight_style = ParagraphStyle(
+        'Highlight',
+        parent=styles['Normal'],
+        fontName=korean_font,
+        fontSize=12,
+        spaceAfter=8,
+        textColor=colors.HexColor('#00A5E5'),  # POSCO Light Blue
+        leading=18
+    )
+    summary_style = ParagraphStyle(
+        'Summary',
+        parent=styles['Normal'],
+        fontName=korean_font,
+        fontSize=13,
+        spaceAfter=12,
+        textColor=colors.HexColor('#4B5151'),  # Dark Gray
+        leading=20,
+        leftIndent=20
+    )
+    
+    # 데이터 수집
+    if use_real_api:
+        try:
+            production_kpi = generate_production_kpi()
+            equipment_data = get_equipment_status_from_api(use_real_api)
+            alerts_data = get_alerts_from_api(use_real_api)
+            quality_data = generate_quality_trend()
+            sensor_data = get_sensor_data_from_api(use_real_api) or generate_sensor_data()
+        except:
+            production_kpi = generate_production_kpi()
+            equipment_data = generate_equipment_status()
+            alerts_data = generate_alert_data()
+            quality_data = generate_quality_trend()
+            sensor_data = generate_sensor_data()
+    else:
+        production_kpi = generate_production_kpi()
+        equipment_data = generate_equipment_status()
+        alerts_data = generate_alert_data()
+        quality_data = generate_quality_trend()
+        sensor_data = generate_sensor_data()
+    
+    # 헤더 섹션 (실무적 디자인)
+    story.append(Paragraph("POSCO MOBILITY IoT 대시보드", title_style))
+    story.append(Paragraph("종합 분석 리포트", subtitle_style))
+    story.append(Spacer(1, 25))
+    
+    # 메타 정보 (실무적 테이블 디자인)
+    meta_info = f"""
+    <table width="100%" cellpadding="8" cellspacing="0" border="1" bordercolor="#DEE2E6">
+    <tr bgcolor="#05507D">
+        <td width="20%" style="color: white; font-weight: bold; text-align: center;">생성일시</td>
+        <td width="30%" style="text-align: center;">{datetime.now().strftime('%Y년 %m월 %d일 %H:%M')}</td>
+        <td width="20%" style="color: white; font-weight: bold; text-align: center;">리포트 유형</td>
+        <td width="30%" style="text-align: center;">{report_type}</td>
+    </tr>
+    <tr bgcolor="#F8F9FA">
+        <td style="font-weight: bold; text-align: center;">데이터 소스</td>
+        <td style="text-align: center;">{'실시간 API' if use_real_api else '더미 데이터'}</td>
+        <td style="font-weight: bold; text-align: center;">생성자</td>
+        <td style="text-align: center;">POSCO MOBILITY IoT 시스템</td>
+    </tr>
+    </table>
+    """
+    story.append(Paragraph(meta_info, normal_style))
+    story.append(Spacer(1, 30))
+    
+    # 1. KPI 대시보드 (실무적 디자인)
+    story.append(Paragraph("1. 핵심 성과 지표 (KPI) 대시보드", heading_style))
+    
+    # KPI 요약 정보
+    kpi_summary = f"""
+    <b>📊 KPI 현황 요약</b><br/>
+    • OEE (설비종합효율): <b>{production_kpi['oee']:.1f}%</b> (목표: 85.0%) - {'🟢 양호' if production_kpi['oee'] >= 85 else '🟡 개선필요'}<br/>
+    • 가동률: <b>{production_kpi['availability']:.1f}%</b> (목표: 90.0%) - {'🟢 양호' if production_kpi['availability'] >= 90 else '🟡 개선필요'}<br/>
+    • 성능률: <b>{production_kpi['performance']:.1f}%</b> (목표: 90.0%) - {'🟢 양호' if production_kpi['performance'] >= 90 else '🟡 개선필요'}<br/>
+    • 품질률: <b>{production_kpi['quality']:.2f}%</b> (목표: 99.5%) - {'🟢 우수' if production_kpi['quality'] >= 99.5 else '🟡 양호'}<br/>
+    • 일일 생산량: <b>{production_kpi['daily_actual']:,}개</b> (목표: {production_kpi['daily_target']:,}개) - {'🟢 달성' if production_kpi['daily_actual'] >= production_kpi['daily_target'] else '🟡 미달성'}<br/>
+    """
+    story.append(Paragraph(kpi_summary, summary_style))
+    
+    # KPI 상세 테이블 (크기 확대)
+    kpi_data = [
+        ['지표', '현재값', '목표값', '달성률', '상태'],
+        ['OEE (설비종합효율)', f"{production_kpi['oee']:.1f}%", '85.0%', f"{production_kpi['oee']/85*100:.1f}%", 
+         '🟢 양호' if production_kpi['oee'] >= 85 else '🟡 개선필요'],
+        ['가동률', f"{production_kpi['availability']:.1f}%", '90.0%', f"{production_kpi['availability']/90*100:.1f}%", 
+         '🟢 양호' if production_kpi['availability'] >= 90 else '🟡 개선필요'],
+        ['성능률', f"{production_kpi['performance']:.1f}%", '90.0%', f"{production_kpi['performance']/90*100:.1f}%", 
+         '🟢 양호' if production_kpi['performance'] >= 90 else '🟡 개선필요'],
+        ['품질률', f"{production_kpi['quality']:.2f}%", '99.5%', f"{production_kpi['quality']/99.5*100:.1f}%", 
+         '🟢 우수' if production_kpi['quality'] >= 99.5 else '🟡 양호'],
+        ['일일 생산량', f"{production_kpi['daily_actual']:,}개", f"{production_kpi['daily_target']:,}개", 
+         f"{production_kpi['daily_actual']/production_kpi['daily_target']*100:.1f}%", 
+         '🟢 달성' if production_kpi['daily_actual'] >= production_kpi['daily_target'] else '🟡 미달성']
+    ]
+    
+    kpi_table = Table(kpi_data, colWidths=[150, 100, 100, 100, 120])
+    kpi_table.setStyle(TableStyle([
+        # 헤더 스타일
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#05507D')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), korean_font),
+        ('FONTSIZE', (0, 0), (-1, 0), 12),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 18),
+        ('TOPPADDING', (0, 0), (-1, 0), 12),
+        # 데이터 행 스타일
+        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#FFFFFF')),
+        ('FONTNAME', (0, 1), (-1, -1), korean_font),
+        ('FONTSIZE', (0, 1), (-1, -1), 11),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 12),
+        ('TOPPADDING', (0, 1), (-1, -1), 12),
+        # 그리드 및 정렬
+        ('GRID', (0, 0), (-1, -1), 1.5, colors.HexColor('#DEE2E6')),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        # 번갈아가는 행 색상
+        ('BACKGROUND', (0, 2), (-1, 2), colors.HexColor('#F8F9FA')),
+        ('BACKGROUND', (0, 4), (-1, 4), colors.HexColor('#F8F9FA')),
+    ]))
+    story.append(kpi_table)
+    story.append(Spacer(1, 25))
+    
+    # 2. 품질 분석 (실무적 디자인)
+    story.append(Paragraph("2. 품질 관리 분석", heading_style))
+    
+    if quality_data is not None and len(quality_data) > 0:
+        df_quality = pd.DataFrame(quality_data)
+        avg_quality = df_quality['quality_rate'].mean()
+        avg_defect_rate = df_quality['defect_rate'].mean()
+        
+        quality_summary = f"""
+        <b>📊 품질 현황 요약</b><br/>
+        • 평균 품질률: <b>{avg_quality:.2f}%</b> ({'🟢 우수' if avg_quality >= 99.5 else '🟡 양호'})<br/>
+        • 평균 불량률: <b>{avg_defect_rate:.3f}%</b> ({'🟢 양호' if avg_defect_rate <= 0.05 else '🟡 개선필요'})<br/>
+        • 최고 품질률: <b>{df_quality['quality_rate'].max():.2f}%</b><br/>
+        • 최저 품질률: <b>{df_quality['quality_rate'].min():.2f}%</b><br/>
+        """
+        story.append(Paragraph(quality_summary, summary_style))
+        
+        # 품질 추세 테이블 (크기 확대)
+        quality_trend_data = [['요일', '품질률 (%)', '불량률 (%)', '생산량 (개)']]
+        for _, row in df_quality.iterrows():
+            quality_trend_data.append([
+                row['day'], 
+                f"{row['quality_rate']:.2f}", 
+                f"{row['defect_rate']:.3f}", 
+                f"{row['production_volume']:,}"
+            ])
+        
+        quality_trend_table = Table(quality_trend_data, colWidths=[120, 120, 120, 140])
+        quality_trend_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#05507D')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, -1), korean_font),
+            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('FONTSIZE', (0, 1), (-1, -1), 11),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 15),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 10),
+            ('GRID', (0, 0), (-1, -1), 1.5, colors.HexColor('#DEE2E6')),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('BACKGROUND', (0, 2), (-1, 2), colors.HexColor('#F8F9FA')),
+            ('BACKGROUND', (0, 4), (-1, 4), colors.HexColor('#F8F9FA')),
+            ('BACKGROUND', (0, 6), (-1, 6), colors.HexColor('#F8F9FA')),
+        ]))
+        story.append(quality_trend_table)
+        story.append(Spacer(1, 25))
+    
+    # 3. 설비 상태 분석 (실무적 디자인)
+    story.append(Paragraph("3. 설비 상태 및 효율성 분석", heading_style))
+    
+    if equipment_data:
+        df_equipment = pd.DataFrame(equipment_data)
+        status_counts = df_equipment['status'].value_counts()
+        total_equipment = len(df_equipment)
+        
+        # 설비 상태 요약
+        status_summary = f"""
+        <b>🏭 설비 현황 요약</b><br/>
+        • 총 설비 수: <b>{total_equipment}대</b><br/>
+        • 정상 가동: <b>{status_counts.get('정상', 0)}대</b> ({status_counts.get('정상', 0)/total_equipment*100:.1f}%)<br/>
+        • 주의 필요: <b>{status_counts.get('주의', 0)}대</b> ({status_counts.get('주의', 0)/total_equipment*100:.1f}%)<br/>
+        • 오류 발생: <b>{status_counts.get('오류', 0)}대</b> ({status_counts.get('오류', 0)/total_equipment*100:.1f}%)<br/>
+        """
+        story.append(Paragraph(status_summary, summary_style))
+        
+        # 설비별 상세 정보 (상위 10개, 크기 확대)
+        equipment_detail_data = [['설비명', '상태', '효율률 (%)', '유형', '최근 정비일']]
+        for _, row in df_equipment.head(10).iterrows():
+            status_icon = '🟢' if row['status'] == '정상' else '🟡' if row['status'] == '주의' else '🔴'
+            equipment_detail_data.append([
+                row['name'],
+                f"{status_icon} {row['status']}",
+                f"{row['efficiency']:.1f}",
+                row['type'],
+                row['last_maintenance']
+            ])
+        
+        equipment_detail_table = Table(equipment_detail_data, colWidths=[150, 100, 100, 100, 120])
+        equipment_detail_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#05507D')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, -1), korean_font),
+            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('FONTSIZE', (0, 1), (-1, -1), 11),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 15),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 10),
+            ('GRID', (0, 0), (-1, -1), 1.5, colors.HexColor('#DEE2E6')),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('BACKGROUND', (0, 2), (-1, 2), colors.HexColor('#F8F9FA')),
+            ('BACKGROUND', (0, 4), (-1, 4), colors.HexColor('#F8F9FA')),
+            ('BACKGROUND', (0, 6), (-1, 6), colors.HexColor('#F8F9FA')),
+            ('BACKGROUND', (0, 8), (-1, 8), colors.HexColor('#F8F9FA')),
+        ]))
+        story.append(equipment_detail_table)
+        story.append(Spacer(1, 25))
+    
+    # 4. 알림 분석 (실무적 디자인)
+    story.append(Paragraph("4. 알림 및 이슈 분석", heading_style))
+    
+    if alerts_data:
+        df_alerts = pd.DataFrame(alerts_data)
+        total_alerts = len(df_alerts)
+        error_count = len(df_alerts[df_alerts['severity'] == 'error'])
+        warning_count = len(df_alerts[df_alerts['severity'] == 'warning'])
+        info_count = len(df_alerts[df_alerts['severity'] == 'info'])
+        
+        # 알림 요약
+        alert_summary = f"""
+        <b>🚨 알림 현황 요약</b><br/>
+        • 총 알림 수: <b>{total_alerts}건</b><br/>
+        • 긴급 알림: <b>{error_count}건</b> ({error_count/total_alerts*100:.1f}%) - 최우선 처리 필요<br/>
+        • 경고 알림: <b>{warning_count}건</b> ({warning_count/total_alerts*100:.1f}%) - 주의 깊게 모니터링<br/>
+        • 정보 알림: <b>{info_count}건</b> ({info_count/total_alerts*100:.1f}%) - 참고사항<br/>
+        """
+        story.append(Paragraph(alert_summary, summary_style))
+        
+        # 주요 알림 상세 (상위 8개, 크기 확대)
+        alert_detail_data = [['시간', '설비', '이슈', '심각도', '상태']]
+        for _, row in df_alerts.head(8).iterrows():
+            severity_icon = '🔴' if row['severity'] == 'error' else '🟡' if row['severity'] == 'warning' else '🔵'
+            alert_detail_data.append([
+                row['time'],
+                row['equipment'],
+                row['issue'][:25] + '...' if len(row['issue']) > 25 else row['issue'],
+                f"{severity_icon} {row['severity']}",
+                row['status']
+            ])
+        
+        alert_detail_table = Table(alert_detail_data, colWidths=[100, 100, 150, 90, 90])
+        alert_detail_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#05507D')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, -1), korean_font),
+            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('FONTSIZE', (0, 1), (-1, -1), 11),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 15),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 10),
+            ('GRID', (0, 0), (-1, -1), 1.5, colors.HexColor('#DEE2E6')),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('BACKGROUND', (0, 2), (-1, 2), colors.HexColor('#F8F9FA')),
+            ('BACKGROUND', (0, 4), (-1, 4), colors.HexColor('#F8F9FA')),
+            ('BACKGROUND', (0, 6), (-1, 6), colors.HexColor('#F8F9FA')),
+        ]))
+        story.append(alert_detail_table)
+        story.append(Spacer(1, 25))
+    
+    # 5. 센서 데이터 분석 (실무적 디자인)
+    story.append(Paragraph("5. 센서 데이터 분석", heading_style))
+    
+    if sensor_data is not None and len(sensor_data) > 0:
+        df_sensor = pd.DataFrame(sensor_data) if not isinstance(sensor_data, pd.DataFrame) else sensor_data
+        
+        if not df_sensor.empty and 'temperature' in df_sensor.columns:
+            # 센서 데이터 요약
+            temp_avg = df_sensor['temperature'].mean()
+            pressure_avg = df_sensor['pressure'].mean()
+            vibration_avg = df_sensor['vibration'].mean()
+            
+            sensor_summary = f"""
+            <b>📡 센서 데이터 요약</b><br/>
+            • 평균 온도: <b>{temp_avg:.1f}°C</b> (정상 범위: 20-80°C)<br/>
+            • 평균 압력: <b>{pressure_avg:.1f} bar</b> (정상 범위: 100-200 bar)<br/>
+            • 평균 진동: <b>{vibration_avg:.2f} mm/s</b> (정상 범위: 0.2-1.0 mm/s)<br/>
+            • 데이터 포인트: <b>{len(df_sensor)}개</b><br/>
+            """
+            story.append(Paragraph(sensor_summary, summary_style))
+    
+    # 6. 권장사항 및 액션 플랜 (실무적 디자인)
+    story.append(Paragraph("6. 권장사항 및 액션 플랜", heading_style))
+    
+    # 즉시 조치사항
+    immediate_actions = f"""
+    <b>⚡ 즉시 조치 필요사항</b><br/>
+    """
+    if error_count > 0:
+        immediate_actions += f"• 🔴 긴급 알림 {error_count}건 신속 처리 (24시간 이내)<br/>"
+    if production_kpi['oee'] < 85:
+        immediate_actions += f"• 🟡 OEE 개선 활동 강화 (현재: {production_kpi['oee']:.1f}%)<br/>"
+    if 'avg_defect_rate' in locals() and avg_defect_rate > 0.05:
+        immediate_actions += f"• 🟡 품질 관리 강화 (불량률: {avg_defect_rate:.3f}%)<br/>"
+    
+    immediate_actions += """
+    • 🔧 설비 점검 일정 재검토 및 실행<br/>
+    • 🤖 AI 모델 예측 정확도 모니터링 강화<br/>
+    • 📊 실시간 데이터 분석 체계 점검<br/>
+    """
+    story.append(Paragraph(immediate_actions, summary_style))
+    
+    # 장기 개선 계획
+    long_term_plan = f"""
+    <b>📈 장기 개선 계획</b><br/>
+    • 🏭 예방 정비 체계 고도화: AI 예측 기반 스마트 정비 시스템 구축<br/>
+    • 📊 품질 관리 시스템 확대: 실시간 품질 모니터링 및 자동화<br/>
+    • 🧠 데이터 분석 플랫폼 구축: 빅데이터 기반 의사결정 지원 시스템<br/>
+    • 🌐 디지털 트윈 구현: 가상 설비 모델링을 통한 최적화<br/>
+    • 🔄 자동화 및 로봇화 확대: 인력 효율성 증대 및 안전성 향상<br/>
+    • 📱 모바일 대시보드 개발: 현장 작업자 접근성 향상<br/>
+    """
+    story.append(Paragraph(long_term_plan, normal_style))
+    
+    # 7. 결론 및 다음 단계 (실무적 디자인)
+    story.append(Paragraph("7. 결론 및 다음 단계", heading_style))
+    
+    conclusion = f"""
+    <b>📋 종합 평가</b><br/>
+    현재 POSCO MOBILITY IoT 시스템은 전반적으로 안정적인 운영 상태를 보이고 있습니다. 
+    OEE {production_kpi['oee']:.1f}%, 품질률 {production_kpi['quality']:.2f}%의 성과를 달성하고 있으며, 
+    지속적인 모니터링과 개선 활동을 통해 더욱 높은 수준의 운영 효율성을 달성할 수 있을 것으로 예상됩니다.<br/><br/>
+    
+    <b>🎯 다음 단계</b><br/>
+    1. 이 리포트의 권장사항을 바탕으로 즉시 조치사항 실행<br/>
+    2. 주간/월간 성과 리뷰를 통한 지속적 개선<br/>
+    3. AI 모델 성능 모니터링 및 업데이트<br/>
+    4. 디지털 트윈 구축을 위한 기술 검토 및 계획 수립<br/>
+    """
+    story.append(Paragraph(conclusion, normal_style))
+    
+    # PDF 생성
+    try:
+        doc.build(story)
+    except Exception as e:
+        # 한글 폰트가 없을 경우 기본 폰트로 재시도
+        for style in [title_style, subtitle_style, heading_style, normal_style, highlight_style, summary_style]:
+            style.fontName = 'Helvetica'
+        doc.build(story)
+    
+    buffer.seek(0)
+    return buffer
 
 
 
@@ -1459,6 +2402,9 @@ def update_sensor_data_container(use_real_api=True, selected_sensor="전체"):
         else:
             sensor_data = generate_sensor_data()
 
+        # 설비 필터 적용 (안전한 접근)
+        equipment_filter = st.session_state.get('equipment_filter', [])
+        
         # 센서 데이터 처리
         if sensor_data is not None and (
             (isinstance(sensor_data, dict) and sensor_data) or
@@ -1532,8 +2478,16 @@ def update_sensor_data_container(use_real_api=True, selected_sensor="전체"):
             elif isinstance(sensor_data, pd.DataFrame):
                 # DataFrame 형식 (더미 데이터)
                 if selected_sensor == "전체":
-                    # 모든 센서 데이터 표시 (첫 번째 설비 기준)
-                    if 'equipment' in sensor_data.columns:
+                    # 설비 필터 적용 (안전한 접근)
+                    if equipment_filter and isinstance(equipment_filter, list) and 'equipment' in sensor_data.columns:
+                        # 필터링된 설비의 데이터만 사용
+                        filtered_data = sensor_data[sensor_data['equipment'].isin(equipment_filter)]
+                        if not filtered_data.empty:
+                            first_equipment = filtered_data['equipment'].iloc[0]
+                            equipment_data = filtered_data[filtered_data['equipment'] == first_equipment]
+                        else:
+                            equipment_data = sensor_data.head(1)  # 필터링된 데이터가 없으면 첫 번째 설비 사용
+                    elif 'equipment' in sensor_data.columns:
                         first_equipment = sensor_data['equipment'].iloc[0]
                         equipment_data = sensor_data[sensor_data['equipment'] == first_equipment]
                     else:
@@ -1649,8 +2603,17 @@ def update_alert_container(use_real_api=True):
             st.session_state.data_cleared = False
             pass  # 알림 데이터 제거 플래그 해제됨
         
+        # 설비 필터 적용 (안전한 접근)
+        equipment_filter = st.session_state.get('equipment_filter', [])
+        if equipment_filter and isinstance(equipment_filter, list):
+            # 필터링된 설비의 알림만 표시
+            filtered_alerts = [a for a in alerts if a['equipment'] in equipment_filter]
+        else:
+            # 필터가 없으면 모든 알림 표시
+            filtered_alerts = alerts
+        
         # ERROR와 WARNING 발생한 경우만 필터링
-        error_warning_alerts = [a for a in alerts if a['severity'] in ['error', 'warning']]
+        error_warning_alerts = [a for a in filtered_alerts if a['severity'] in ['error', 'warning']]
         
         # 최대 8개까지 표시
         error_warning_alerts = error_warning_alerts[:8]
@@ -1728,8 +2691,18 @@ def update_equipment_container(use_real_api=True):
         if use_real_api and equipment_status:
             st.session_state.data_cleared = False
             pass  # 설비 상태 데이터 제거 플래그 해제됨
+        
+        # 설비 필터 적용 (안전한 접근)
+        equipment_filter = st.session_state.get('equipment_filter', [])
+        if equipment_filter and isinstance(equipment_filter, list):
+            # 필터링된 설비만 표시
+            filtered_equipment = [eq for eq in equipment_status if eq['name'] in equipment_filter]
+        else:
+            # 필터가 없으면 모든 설비 표시
+            filtered_equipment = equipment_status
+        
         table_data = []
-        for eq in equipment_status:
+        for eq in filtered_equipment:
             status_emoji = {'정상':'🟢','주의':'🟠','오류':'🔴'}.get(eq['status'],'🟢')
             table_data.append({
                 '설비': eq['name'],
@@ -1851,6 +2824,28 @@ def main():
     if 'selected_sensor' not in st.session_state:
         st.session_state.selected_sensor = '전체'
     
+    # 설비 필터 관련 session state 초기화
+    if 'equipment_filter' not in st.session_state:
+        st.session_state.equipment_filter = []
+    if 'previous_equipment_filter' not in st.session_state:
+        st.session_state.previous_equipment_filter = []
+    if 'selected_equipment' not in st.session_state:
+        st.session_state.selected_equipment = []
+    if 'data_cleared' not in st.session_state:
+        st.session_state.data_cleared = False
+    if 'critical_alerts' not in st.session_state:
+        st.session_state.critical_alerts = []
+    if 'last_alert_count' not in st.session_state:
+        st.session_state.last_alert_count = 0
+    if 'last_update' not in st.session_state:
+        st.session_state.last_update = time.time()
+    if 'last_quick_update' not in st.session_state:
+        st.session_state.last_quick_update = time.time()
+    if 'previous_sensor_count' not in st.session_state:
+        st.session_state.previous_sensor_count = 0
+    if 'previous_alert_count' not in st.session_state:
+        st.session_state.previous_alert_count = 0
+    
     # 백그라운드 스레드 비활성화 (st_autorefresh 사용)
     print("[DEBUG] 백그라운드 스레드 비활성화됨")
     
@@ -1892,19 +2887,18 @@ def main():
         '''
         <style>
         .stButton > button {
-            background: none !important;
-            border: none !important;
-            color: #222 !important;
+            background: #ffffff !important;
+            border: 1px solid #e2e8f0 !important;
+            color: #374151 !important;
             font-size: 1.08rem !important;
             padding: 0.6rem 1.3rem 0.3rem 1.3rem !important;
             margin: 0 !important;
             cursor: pointer !important;
             outline: none !important;
-            border-radius: 0 !important;
-            border-bottom: 3px solid transparent !important;
-            box-shadow: none !important;
+            border-radius: 12px !important;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
             font-weight: 500 !important;
-            transition: color 0.18s, border-bottom 0.18s, background 0.18s;
+            transition: all 0.3s ease !important;
         }
         .stButton > button.selected {
             color: #2563eb !important;
@@ -1913,8 +2907,46 @@ def main():
             background: #f5faff !important;
         }
         .stButton > button:hover {
-            background: #f0f6ff !important;
-            color: #1d4ed8 !important;
+            background: linear-gradient(135deg, #05507D 0%, #00A5E5 100%) !important;
+            color: #ffffff !important;
+            transform: translateY(-2px) !important;
+            box-shadow: 0 6px 20px rgba(5, 80, 125, 0.3) !important;
+        }
+        
+        /* Date Input 스타일 - 흰색 배경 */
+        div[data-testid="stDateInput"] > div > div > input {
+            background-color: #ffffff !important;
+            border: 1px solid #e2e8f0 !important;
+            color: #374151 !important;
+        }
+        
+        div[data-testid="stDateInput"] input {
+            background-color: #ffffff !important;
+            border: 1px solid #e2e8f0 !important;
+            color: #374151 !important;
+        }
+        
+        .stDateInput > div > div > input {
+            background-color: #ffffff !important;
+            border: 1px solid #e2e8f0 !important;
+            color: #374151 !important;
+        }
+        
+        /* 대시보드 메인 화면을 제외한 모든 탭의 날짜 선택 박스 width 줄이기 */
+        div[data-testid="stDateInput"] {
+            width: 150px !important;
+        }
+        
+        div[data-testid="stDateInput"] > div {
+            width: 150px !important;
+        }
+        
+        div[data-testid="stDateInput"] > div > div {
+            width: 150px !important;
+        }
+        
+        div[data-testid="stDateInput"] > div > div > input {
+            width: 150px !important;
         }
         
         /* 팝업 알림 스타일 */
@@ -2046,9 +3078,64 @@ def main():
     # ----------- 사이드바(필터, AI 연동, 새로고침) 복원 -----------
     with st.sidebar:
         st.markdown('<div style="font-size:18px; font-weight:bold; margin-bottom:0.5rem; margin-top:0.5rem;">필터 설정</div>', unsafe_allow_html=True)
+        
+        # 구분선 추가
+        st.markdown("---")
+        
         st.markdown('<div style="font-size:13px; color:#64748b; margin-bottom:0.1rem; margin-top:0.3rem;">공정 선택</div>', unsafe_allow_html=True)
         process = st.selectbox("공정 선택", ["전체 공정", "프레스 공정", "용접 공정", "조립 공정", "검사 공정"], label_visibility="collapsed")
+        
+        # 구분선 추가
+        st.markdown("---")
+        
         st.markdown('<div style="font-size:13px; color:#64748b; margin-bottom:0.1rem; margin-top:0.3rem;">설비 필터</div>', unsafe_allow_html=True)
+        
+        # 설비 목록 먼저 생성
+        equipment_list = generate_equipment_status()
+        equipment_names_full = [eq['name'] for eq in equipment_list]
+        equipment_names_short = []
+        for name in equipment_names_full:
+            if '프레스기' in name:
+                short_name = name.replace('프레스기', '프레스')
+            elif '용접기' in name:
+                short_name = name.replace('용접기', '용접')
+            elif '조립기' in name:
+                short_name = name.replace('조립기', '조립')
+            elif '검사기' in name:
+                short_name = name.replace('검사기', '검사')
+            elif '포장기' in name:
+                short_name = name.replace('포장기', '포장')
+            else:
+                short_name = name
+            equipment_names_short.append(short_name)
+        
+        # 공정별 필터 드롭다운
+        process_types = ["전체", "프레스기", "용접기", "조립기", "검사기", "포장기"]
+        selected_process = st.selectbox(
+            "공정 선택",
+            process_types,
+            index=0,
+            label_visibility="collapsed"
+        )
+        
+        # 선택된 공정에 따라 설비 목록 필터링
+        filtered_equipment = []
+        for short_name in equipment_names_short:
+            if selected_process == "전체":
+                filtered_equipment.append(short_name)
+            elif selected_process == "프레스기" and "프레스" in short_name:
+                filtered_equipment.append(short_name)
+            elif selected_process == "용접기" and "용접" in short_name:
+                filtered_equipment.append(short_name)
+            elif selected_process == "조립기" and "조립" in short_name:
+                filtered_equipment.append(short_name)
+            elif selected_process == "검사기" and "검사" in short_name:
+                filtered_equipment.append(short_name)
+            elif selected_process == "포장기" and "포장" in short_name:
+                filtered_equipment.append(short_name)
+        
+        # 필터링된 설비 개수 표시
+        st.markdown(f'<div style="font-size:11px; color:#64748b; margin-bottom:0.5rem;">{selected_process}: {len(filtered_equipment)}개 설비</div>', unsafe_allow_html=True)
         
         # 설비 필터 스타일링
         st.markdown("""
@@ -2088,45 +3175,65 @@ def main():
         div[data-testid="stMultiSelect"] > div > div::-webkit-scrollbar-thumb:hover {
             background: #94a3b8 !important;
         }
-        /* 실시간 센서, PPM 트렌드 드롭박스 흰색 배경 */
-        div[data-testid="stSelectbox"] > div > div {
-            background-color: white !important;
-            color: #1e293b !important;
-            border: 1px solid #e2e8f0 !important;
-            border-radius: 8px !important;
-        }
-        div[data-testid="stSelectbox"] > div > div:hover {
-            background-color: #f8fafc !important;
-            border-color: #cbd5e1 !important;
-        }
+            /* 실시간 센서, PPM 트렌드 드롭박스 흰색 배경 */
+    div[data-testid="stSelectbox"] > div > div {
+        background-color: white !important;
+        color: #1e293b !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 8px !important;
+    }
+    div[data-testid="stSelectbox"] > div > div:hover {
+        background-color: #f8fafc !important;
+        border-color: #cbd5e1 !important;
+    }
+    
+    /* 텍스트 입력 필드 흰색 배경 */
+    div[data-testid="stTextInput"] > div > div > input,
+    div[data-testid="stTextInput"] input,
+    .stTextInput > div > div > input {
+        background-color: #ffffff !important;
+        color: #1e293b !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 8px !important;
+    }
+    div[data-testid="stTextInput"] > div > div > input:focus,
+    div[data-testid="stTextInput"] input:focus,
+    .stTextInput > div > div > input:focus {
+        background-color: #ffffff !important;
+        border-color: #05507D !important;
+        box-shadow: 0 0 0 2px rgba(5, 80, 125, 0.1) !important;
+    }
+    
+    /* 텍스트 영역 흰색 배경 */
+    div[data-testid="stTextArea"] > div > div > textarea,
+    div[data-testid="stTextArea"] textarea,
+    .stTextArea > div > div > textarea {
+        background-color: #ffffff !important;
+        color: #1e293b !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 8px !important;
+    }
+    div[data-testid="stTextArea"] > div > div > textarea:focus,
+    div[data-testid="stTextArea"] textarea:focus,
+    .stTextArea > div > div > textarea:focus {
+        background-color: #ffffff !important;
+        border-color: #05507D !important;
+        box-shadow: 0 0 0 2px rgba(5, 80, 125, 0.1) !important;
+    }
         </style>
         """, unsafe_allow_html=True)
         
-        equipment_list = generate_equipment_status()
-        equipment_names_full = [eq['name'] for eq in equipment_list]
-        equipment_names_short = []
-        for name in equipment_names_full:
-            if '프레스기' in name:
-                short_name = name.replace('프레스기', '프레스')
-            elif '용접기' in name:
-                short_name = name.replace('용접기', '용접')
-            elif '조립기' in name:
-                short_name = name.replace('조립기', '조립')
-            elif '검사기' in name:
-                short_name = name.replace('검사기', '검사')
-            elif '포장기' in name:
-                short_name = name.replace('포장기', '포장')
-            else:
-                short_name = name
-            equipment_names_short.append(short_name)
-        
-        # 고정 높이 컨테이너 내에서 multiselect
-        equipment_filter_short = st.multiselect(
-            "설비 필터",
-            equipment_names_short,
-            default=equipment_names_short,
-            label_visibility="collapsed"
-        )
+        # 고정 높이 컨테이너 내에서 multiselect (필터링된 목록 사용)
+        if filtered_equipment:
+            equipment_filter_short = st.multiselect(
+                "설비 필터",
+                filtered_equipment,
+                default=filtered_equipment,  # 필터링된 모든 설비가 기본 선택됨
+                label_visibility="collapsed"
+            )
+        else:
+            st.info(f"{selected_process}에 해당하는 설비가 없습니다.")
+            equipment_filter_short = []
         
         equipment_filter = []
         for short_name in equipment_filter_short:
@@ -2134,19 +3241,71 @@ def main():
                 if equipment_names_short[i] == short_name:
                     equipment_filter.append(full_name)
                     break
-        st.markdown('<hr style="margin:1.5rem 0 1rem 0; border: none; border-top: 1.5px solid #e2e8f0;" />', unsafe_allow_html=True)
-        st.markdown('<div style="font-size:18px; font-weight:bold; margin-bottom:0.5rem; margin-top:0.5rem;">날짜 선택</div>', unsafe_allow_html=True)
-        st.markdown('<div style="font-size:13px; color:#64748b; margin-bottom:0.1rem; margin-top:0.3rem;">일자 선택</div>', unsafe_allow_html=True)
-        selected_date = st.date_input("일자 선택", datetime.now().date(), label_visibility="collapsed")
-        st.markdown('<div style="font-size:13px; color:#64748b; margin-bottom:0.1rem; margin-top:0.3rem;">기간 선택</div>', unsafe_allow_html=True)
-        date_range = st.date_input(
-            "기간 선택",
-            value=(datetime.now().date() - timedelta(days=7), datetime.now().date()),
+        
+        # 설비 필터를 session state에 저장 (다른 함수에서 사용하기 위해)
+        if 'previous_equipment_filter' not in st.session_state:
+            st.session_state.previous_equipment_filter = []
+        
+        # 필터가 변경되었는지 확인 (안전한 접근)
+        current_filter = st.session_state.get('equipment_filter', [])
+        previous_filter = st.session_state.get('previous_equipment_filter', [])
+        
+        if current_filter != equipment_filter:
+            st.session_state.previous_equipment_filter = equipment_filter.copy()
+            st.session_state.equipment_filter = equipment_filter
+            # 필터 변경 시 컨테이너 초기화
+            st.session_state.sensor_container = None
+            st.session_state.alert_container = None
+            st.session_state.equipment_container = None
+            st.rerun()
+        else:
+            st.session_state.equipment_filter = equipment_filter
+        # 구분선 추가
+        st.markdown("---")
+        st.markdown('<div style="font-size:18px; font-weight:bold; margin-bottom:0.5rem; margin-top:0.5rem;">📅 날짜 선택</div>', unsafe_allow_html=True)
+        
+        # 일자별/기간별 라디오 박스 (좌우 배치, 포스코모빌리티 블루)
+        date_mode = st.radio(
+            "📅 날짜 선택", 
+            ["일자별", "기간별"], 
+            key="sidebar_date_mode",
+            horizontal=True,
             label_visibility="collapsed"
         )
-        st.markdown('<hr style="margin:1.5rem 0 1rem 0; border: none; border-top: 1.5px solid #e2e8f0;" />', unsafe_allow_html=True)
+        
+        # 라디오 박스 스타일링 (선택된 것만 파란색)
+        st.markdown("""
+        <style>
+        .stRadio > div > label[data-testid="stRadio"] {
+            color: #3b82f6;
+            font-weight: bold;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        if date_mode == "일자별":
+            st.markdown('<div style="font-size:13px; color:#64748b; margin-bottom:0.1rem; margin-top:0.3rem;">일자 선택</div>', unsafe_allow_html=True)
+            selected_date = st.date_input("일자 선택", datetime.now().date(), label_visibility="collapsed", key="sidebar_selected_date")
+            
+            # 사이드바 일자 설정을 session state에 저장
+            if 'sidebar_selected_date_stored' not in st.session_state:
+                st.session_state.sidebar_selected_date_stored = selected_date
+            elif st.session_state.sidebar_selected_date_stored != selected_date:
+                st.session_state.sidebar_selected_date_stored = selected_date
+        else:  # 기간별
+            st.markdown('<div style="font-size:13px; color:#64748b; margin-bottom:0.1rem; margin-top:0.3rem;">기간 선택</div>', unsafe_allow_html=True)
+            start_date = st.date_input("시작일", (datetime.now() - timedelta(days=7)).date(), label_visibility="collapsed", key="sidebar_start_date")
+            end_date = st.date_input("종료일", datetime.now().date(), label_visibility="collapsed", key="sidebar_end_date")
+            
+            # 사이드바 기간 설정을 session state에 저장
+            if 'sidebar_date_range_stored' not in st.session_state:
+                st.session_state.sidebar_date_range_stored = (start_date, end_date)
+            elif st.session_state.sidebar_date_range_stored != (start_date, end_date):
+                st.session_state.sidebar_date_range_stored = (start_date, end_date)
+        # 구분선 추가
+        st.markdown("---")
         # 연동 토글 항상 하단에
-        use_real_api = st.toggle("API 연동", value=st.session_state.get('api_toggle', False), help="실제 API에서 데이터를 받아옵니다.", key="api_toggle")
+        use_real_api = st.toggle("🔗 API 연동", value=st.session_state.get('api_toggle', False), help="실제 API에서 데이터를 받아옵니다.", key="api_toggle")
         
         # API 토글 상태 변경 감지 및 초기화 (토글 정의 후에 실행)
         if use_real_api != st.session_state.api_toggle_previous:
@@ -2190,11 +3349,18 @@ def main():
         # 새로고침 상태 표시
         if refresh_interval == "수동":
             st.info("🔄 수동 새로고침 모드")
+            # 수동 새로고침 버튼
+            if st.button("🔄 지금 새로고침", key="manual_refresh", use_container_width=True):
+                st.session_state.last_update = time.time()
+                st.session_state.last_refresh = datetime.now()
+                st.session_state.last_quick_update = time.time()
+                st.rerun()
         else:
             st.info(f"🔄 {refresh_interval}마다 자동 새로고침")
         
-        # 데이터 제거 버튼
-        if st.button("🗑️ 데이터 제거", help="기존 센서 데이터와 알림을 모두 삭제합니다."):
+        # 데이터 제거 버튼 개선
+        st.markdown('<div style="margin-top:1rem;"></div>', unsafe_allow_html=True)
+        if st.button("🗑️ 데이터 제거", help="기존 센서 데이터와 알림을 모두 삭제합니다.", use_container_width=True):
             try:
                 response = requests.post("http://localhost:8000/clear_data", timeout=5)
                 if response.status_code == 200:
@@ -2220,18 +3386,35 @@ def main():
                     st.error("데이터 초기화 실패")
             except Exception as e:
                 st.error(f"API 서버 연결 실패: {e}")
+        
+        # 사이드바 하단 여백
+        st.markdown('<div style="margin-bottom:2rem;"></div>', unsafe_allow_html=True)
     
     with tabs[0]:  # 대시보드
         st.markdown('<div class="main-header no-translate" translate="no" style="margin-bottom:0.5rem; font-size:1.5rem;">🏭 POSCO MOBILITY IoT 대시보드</div>', unsafe_allow_html=True)
         
-        # 위험 알림 팝업 표시
-        if st.session_state.critical_alerts:
-            st.error(f"🚨 **경고 알림 발생!** {len(st.session_state.critical_alerts)}개의 경고 상황이 감지되었습니다.")
-            for alert in st.session_state.critical_alerts[:3]:  # 최대 3개만 표시
-                equipment_name = alert.get('equipment', 'Unknown')
-                issue_text = alert.get('message', alert.get('issue', '경고 상황'))
-                severity_icon = "🔴" if alert.get('severity') == 'error' else "🟠"
-                st.warning(f"{severity_icon} **{equipment_name}**: {issue_text}")
+        # 위험 알림 팝업 표시 (설비 필터 적용, 안전한 접근)
+        equipment_filter = st.session_state.get('equipment_filter', [])
+        critical_alerts = st.session_state.get('critical_alerts', [])
+        if critical_alerts:
+            if equipment_filter and isinstance(equipment_filter, list):
+                # 필터링된 설비의 위험 알림만 표시
+                filtered_critical_alerts = [a for a in critical_alerts if a.get('equipment') in equipment_filter]
+                if filtered_critical_alerts:
+                    st.error(f"🚨 **경고 알림 발생!** {len(filtered_critical_alerts)}개의 경고 상황이 감지되었습니다.")
+                    for alert in filtered_critical_alerts[:3]:  # 최대 3개만 표시
+                        equipment_name = alert.get('equipment', 'Unknown')
+                        issue_text = alert.get('message', alert.get('issue', '경고 상황'))
+                        severity_icon = "🔴" if alert.get('severity') == 'error' else "🟠"
+                        st.warning(f"{severity_icon} **{equipment_name}**: {issue_text}")
+            else:
+                # 필터가 없으면 모든 위험 알림 표시
+                st.error(f"🚨 **경고 알림 발생!** {len(critical_alerts)}개의 경고 상황이 감지되었습니다.")
+                for alert in critical_alerts[:3]:  # 최대 3개만 표시
+                    equipment_name = alert.get('equipment', 'Unknown')
+                    issue_text = alert.get('message', alert.get('issue', '경고 상황'))
+                    severity_icon = "🔴" if alert.get('severity') == 'error' else "🟠"
+                    st.warning(f"{severity_icon} **{equipment_name}**: {issue_text}")
         # KPI+AI 카드 2행 3열 (총 6개)
         row1 = st.columns(3, gap="small")
         row2 = st.columns(3, gap="small")
@@ -2270,7 +3453,15 @@ def main():
             else:
                 alerts = generate_alert_data()
         
-        active_alerts = len([a for a in alerts if a.get('status', '미처리') != '완료'])
+        # 설비 필터 적용하여 활성 알림 계산 (안전한 접근)
+        equipment_filter = st.session_state.get('equipment_filter', [])
+        if equipment_filter and isinstance(equipment_filter, list):
+            # 필터링된 설비의 알림만 계산
+            filtered_alerts = [a for a in alerts if a.get('equipment') in equipment_filter]
+            active_alerts = len([a for a in filtered_alerts if a.get('status', '미처리') != '완료'])
+        else:
+            # 필터가 없으면 모든 알림 계산
+            active_alerts = len([a for a in alerts if a.get('status', '미처리') != '완료'])
         # PPM 계산
         last_defect_rate = quality_data['defect_rate'].iloc[-1]
         last_production_volume = quality_data['production_volume'].iloc[-1]
@@ -2600,6 +3791,39 @@ def main():
         st.markdown('<div class="main-header no-translate" translate="no">🤖 AI 분석</div>', unsafe_allow_html=True)
         st.write("AI 모델을 활용한 설비 이상 예측 및 유압 시스템 이상 탐지 결과를 실시간으로 모니터링하고 분석할 수 있습니다.")
         
+        # ======================
+        # 기간 선택 (맨 위로 이동)
+        # ======================
+        st.markdown("### 📅 기간 선택")
+        
+        # 사이드바 날짜 설정 가져오기
+        sidebar_date_mode = st.session_state.get('sidebar_date_mode', '일자별')
+        sidebar_date = st.session_state.get('sidebar_selected_date_stored', datetime.now().date())
+        sidebar_date_range = st.session_state.get('sidebar_date_range_stored', (datetime.now().date() - timedelta(days=7), datetime.now().date()))
+        
+        col1, col2 = st.columns([2, 2])
+        with col1:
+            col_radio, col_date1 = st.columns([1, 2])
+            with col_radio:
+                date_mode = st.radio(
+                    "📅 조회 모드", 
+                    ["일자별", "기간별"], 
+                    index=0 if sidebar_date_mode == "일자별" else 1, 
+                    key="ai_date_mode",
+                    horizontal=True,
+                    label_visibility="collapsed"
+                )
+            with col_date1:
+                if date_mode == "일자별":
+                    selected_date = st.date_input("조회 일자", value=sidebar_date, key="ai_selected_date")
+                else:
+                    start_date = st.date_input("시작일", value=sidebar_date_range[0], key="ai_start_date")
+        with col2:
+            if date_mode == "기간별":
+                end_date = st.date_input("종료일", value=sidebar_date_range[1], key="ai_end_date")
+            else:
+                st.write("")  # 빈 공간
+        
         # AI 예측 결과 가져오기
         ai_predictions = get_ai_prediction_results(use_real_api)
         
@@ -2724,7 +3948,8 @@ def main():
         # AI 모델 성능 대시보드
         st.markdown("### 📈 AI 모델 성능 대시보드")
         
-        col1, col2 = st.columns(2)
+        # 세로 구분선이 있는 2개 컬럼
+        col1, col2, col3 = st.columns([1, 0.05, 1])
         
         with col1:
             st.markdown("#### 🔧 설비 이상 예측 모델")
@@ -2738,55 +3963,162 @@ def main():
                 st.metric("정밀도", "95.8%", "-0.1%")
                 st.metric("F1-Score", "93.9%", "0.2%")
             
-            # 최근 예측 이력 (가상 데이터)
-            st.markdown("**최근 예측 이력:**")
-            prediction_history = [
-                {"시간": "14:30", "상태": "정상", "확률": 87.2, "결과": "✅"},
-                {"시간": "14:25", "상태": "정상", "확률": 91.5, "결과": "✅"},
-                {"시간": "14:20", "상태": "베어링 고장", "확률": 23.1, "결과": "✅"},
-                {"시간": "14:15", "상태": "정상", "확률": 89.7, "결과": "✅"},
-                {"시간": "14:10", "상태": "정상", "확률": 92.3, "결과": "✅"}
+            # 최근 예측 이력 (기간별 탭)
+            st.markdown("**📊 최근 예측 이력:**")
+            
+            # 기간별 탭 생성
+            time_tabs = st.tabs(["최근 1시간", "최근 6시간", "최근 24시간", "최근 7일"])
+            
+            # 각 탭별 데이터 생성
+            time_periods = [
+                ("최근 1시간", 60),
+                ("최근 6시간", 360),
+                ("최근 24시간", 1440),
+                ("최근 7일", 10080)
             ]
             
-            for pred in prediction_history:
-                if pred["상태"] == "정상":
-                    status_color = "#10B981"
-                    bg_color = "#ECFDF5"
-                elif pred["상태"] == "베어링 고장":
-                    status_color = "#F59E0B"
-                    bg_color = "#FFFBEB"
-                elif pred["상태"] == "롤 정렬 불량":
-                    status_color = "#8B5CF6"
-                    bg_color = "#F3F4F6"
-                elif pred["상태"] == "모터 과부하":
-                    status_color = "#EF4444"
-                    bg_color = "#FEF2F2"
-                else:  # 윤활유 부족
-                    status_color = "#F97316"
-                    bg_color = "#FFF7ED"
-                
-                st.markdown(f"""
-                <div style="background: {bg_color}; border-radius: 8px; padding: 0.8rem; margin-bottom: 0.5rem;">
-                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
-                        <div style="display: flex; align-items: center; gap: 0.8rem;">
-                            <div style="font-weight: 600; color: {status_color}; min-width: 50px;">{pred['시간']}</div>
-                            <div style="font-weight: 600; color: #1e293b;">{pred['상태']}</div>
-                        </div>
-                        <div style="font-size: 1.1rem;">{pred['결과']}</div>
-                    </div>
-                    <div style="background: #e5e7eb; border-radius: 10px; height: 8px; overflow: hidden;">
-                        <div style="background: {status_color}; height: 100%; width: {pred['확률']}%; 
-                                    border-radius: 10px; transition: width 0.3s ease;"></div>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; margin-top: 0.3rem;">
-                        <span style="font-size: 0.8rem; color: #6b7280;">0%</span>
-                        <span style="font-size: 0.8rem; font-weight: 600; color: {status_color};">{pred['확률']}%</span>
-                        <span style="font-size: 0.8rem; color: #6b7280;">100%</span>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+            for tab_idx, (period_name, minutes) in enumerate(time_periods):
+                with time_tabs[tab_idx]:
+                    prediction_history = []
+                    current_time = datetime.now()
+                    
+                    # 해당 기간의 예측 데이터 생성
+                    for i in range(minutes // 5):  # 5분 간격으로 데이터 생성
+                        time_point = current_time - timedelta(minutes=i * 5)
+                        
+                        # 다양한 상태와 확률 생성
+                        if i < 10:  # 최근 50분은 정상
+                            status = "정상"
+                            probability = np.random.uniform(85, 98)
+                        elif i < 20:  # 그 다음 50분은 베어링 고장 가능성
+                            status = "베어링 고장"
+                            probability = np.random.uniform(60, 85)
+                        elif i < 30:  # 그 다음 50분은 롤 정렬 불량
+                            status = "롤 정렬 불량"
+                            probability = np.random.uniform(70, 90)
+                        else:  # 나머지는 정상
+                            status = "정상"
+                            probability = np.random.uniform(80, 95)
+                        
+                        prediction_history.append({
+                            "시간": time_point.strftime('%m-%d %H:%M'),
+                            "상태": status,
+                            "확률": round(probability, 1),
+                            "결과": "✅" if status == "정상" else "⚠️"
+                        })
+                    
+                    # 최신 데이터부터 표시 (최대 20개)
+                    prediction_history = prediction_history[:20]
+                    
+                    # 시간대별 진단결과 그래프
+                    st.markdown(f"**📈 {period_name} 시간대별 진단결과**")
+                    
+                    # 그래프 데이터 준비
+                    time_points = [pred["시간"] for pred in prediction_history]
+                    probabilities = [pred["확률"] for pred in prediction_history]
+                    statuses = [pred["상태"] for pred in prediction_history]
+                    
+                    # 색상 매핑
+                    colors = []
+                    for status in statuses:
+                        if status == "정상":
+                            colors.append("#10B981")
+                        elif status == "베어링 고장":
+                            colors.append("#F59E0B")
+                        elif status == "롤 정렬 불량":
+                            colors.append("#8B5CF6")
+                        elif status == "모터 과부하":
+                            colors.append("#EF4444")
+                        else:
+                            colors.append("#F97316")
+                    
+                    # 라인 차트 생성
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(
+                        x=time_points,
+                        y=probabilities,
+                        mode='lines+markers',
+                        name='진단 확률',
+                        line=dict(color='#05507D', width=2),
+                        marker=dict(color=colors, size=6)
+                    ))
+                    
+                    fig.update_layout(
+                        title=f"{period_name} 진단 확률 추이",
+                        xaxis_title="시간",
+                        yaxis_title="진단 확률 (%)",
+                        height=300,
+                        plot_bgcolor='white',
+                        paper_bgcolor='white',
+                        xaxis=dict(tickangle=45)
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # 상세 이력 테이블 (스크롤 가능한 컨테이너)
+                    st.markdown("**📋 상세 예측 이력:**")
+                    
+                    # 스크롤 가능한 컨테이너 생성
+                    with st.container():
+                        st.markdown("""
+                        <style>
+                        .prediction-history-container {
+                            max-height: 400px;
+                            overflow-y: auto;
+                            border: 1px solid #e2e8f0;
+                            border-radius: 8px;
+                            padding: 1rem;
+                            background: #f8fafc;
+                        }
+                        .prediction-history-container::-webkit-scrollbar {
+                            width: 8px;
+                        }
+                        .prediction-history-container::-webkit-scrollbar-track {
+                            background: #f1f5f9;
+                            border-radius: 4px;
+                        }
+                        .prediction-history-container::-webkit-scrollbar-thumb {
+                            background: #cbd5e1;
+                            border-radius: 4px;
+                        }
+                        .prediction-history-container::-webkit-scrollbar-thumb:hover {
+                            background: #94a3b8;
+                        }
+                        </style>
+                        """, unsafe_allow_html=True)
+                        
+                        # 스크롤 가능한 컨테이너 시작
+                        container_html = '<div class="prediction-history-container">'
+                        
+                        # 예측 이력을 HTML로 생성
+                        for pred in prediction_history[:10]:
+                            if pred["상태"] == "정상":
+                                status_color = "#10B981"
+                                bg_color = "#ECFDF5"
+                            elif pred["상태"] == "베어링 고장":
+                                status_color = "#F59E0B"
+                                bg_color = "#FFFBEB"
+                            elif pred["상태"] == "롤 정렬 불량":
+                                status_color = "#8B5CF6"
+                                bg_color = "#F3F4F6"
+                            elif pred["상태"] == "모터 과부하":
+                                status_color = "#EF4444"
+                                bg_color = "#FEF2F2"
+                            else:  # 윤활유 부족
+                                status_color = "#F97316"
+                                bg_color = "#FFF7ED"
+                            
+                            container_html += f'<div style="background: {bg_color}; border-radius: 8px; padding: 0.8rem; margin-bottom: 0.5rem;"><div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;"><div style="display: flex; align-items: center; gap: 0.8rem;"><div style="font-weight: 600; color: {status_color}; min-width: 50px;">{pred["시간"]}</div><div style="font-weight: 600; color: #1e293b;">{pred["상태"]}</div></div><div style="font-size: 1.1rem;">{pred["결과"]}</div></div><div style="background: #e5e7eb; border-radius: 10px; height: 8px; overflow: hidden;"><div style="background: {status_color}; height: 100%; width: {pred["확률"]}%; border-radius: 10px; transition: width 0.3s ease;"></div></div><div style="display: flex; justify-content: space-between; margin-top: 0.3rem;"><span style="font-size: 0.8rem; color: #6b7280;">0%</span><span style="font-size: 0.8rem; font-weight: 600; color: {status_color};">{pred["확률"]}%</span><span style="font-size: 0.8rem; color: #6b7280;">100%</span></div></div>'
+                        
+                        container_html += '</div>'
+                        st.markdown(container_html, unsafe_allow_html=True)
+
         
+        # 세로 구분선
         with col2:
+            st.markdown('<div style="border-left: 2px solid #e2e8f0; height: 600px; margin: 0 auto;"></div>', unsafe_allow_html=True)
+        
+        with col3:
             st.markdown("#### ⚡ 유압 이상 탐지 모델")
             
             # 모델 성능 지표
@@ -2798,107 +4130,228 @@ def main():
                 st.metric("정밀도", "93.2%", "-0.3%")
                 st.metric("F1-Score", "91.3%", "-0.1%")
             
-            # 최근 예측 이력 (가상 데이터)
-            st.markdown("**최근 예측 이력:**")
-            hydraulic_history = [
-                {"시간": "14:30", "상태": "정상", "신뢰도": 94.1, "결과": "✅"},
-                {"시간": "14:25", "상태": "정상", "신뢰도": 96.2, "결과": "✅"},
-                {"시간": "14:20", "상태": "정상", "신뢰도": 92.8, "결과": "✅"},
-                {"시간": "14:15", "상태": "정상", "신뢰도": 95.3, "결과": "✅"},
-                {"시간": "14:10", "상태": "정상", "신뢰도": 93.7, "결과": "✅"}
+            # 최근 예측 이력 (기간별 탭)
+            st.markdown("**📊 최근 예측 이력:**")
+            
+            # 기간별 탭 생성
+            hydraulic_time_tabs = st.tabs(["최근 1시간", "최근 6시간", "최근 24시간", "최근 7일"])
+            
+            # 각 탭별 데이터 생성
+            hydraulic_time_periods = [
+                ("최근 1시간", 60),
+                ("최근 6시간", 360),
+                ("최근 24시간", 1440),
+                ("최근 7일", 10080)
             ]
             
-            for pred in hydraulic_history:
-                if pred["상태"] == "정상":
-                    status_color = "#10B981"
-                    bg_color = "#ECFDF5"
-                else:  # 이상
-                    status_color = "#EF4444"
-                    bg_color = "#FEF2F2"
-                
-                st.markdown(f"""
-                <div style="background: {bg_color}; border-radius: 8px; padding: 0.8rem; margin-bottom: 0.5rem;">
-                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
-                        <div style="display: flex; align-items: center; gap: 0.8rem;">
-                            <div style="font-weight: 600; color: {status_color}; min-width: 50px;">{pred['시간']}</div>
-                            <div style="font-weight: 600; color: #1e293b;">{pred['상태']}</div>
-                        </div>
-                        <div style="font-size: 1.1rem;">{pred['결과']}</div>
-                    </div>
-                    <div style="background: #e5e7eb; border-radius: 10px; height: 8px; overflow: hidden;">
-                        <div style="background: {status_color}; height: 100%; width: {pred['신뢰도']}%; 
-                                    border-radius: 10px; transition: width 0.3s ease;"></div>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; margin-top: 0.3rem;">
-                        <span style="font-size: 0.8rem; color: #6b7280;">0%</span>
-                        <span style="font-size: 0.8rem; font-weight: 600; color: {status_color};">{pred['신뢰도']}%</span>
-                        <span style="font-size: 0.8rem; color: #6b7280;">100%</span>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+            for tab_idx, (period_name, minutes) in enumerate(hydraulic_time_periods):
+                with hydraulic_time_tabs[tab_idx]:
+                    hydraulic_history = []
+                    current_time = datetime.now()
+                    
+                    # 해당 기간의 예측 데이터 생성
+                    for i in range(minutes // 5):  # 5분 간격으로 데이터 생성
+                        time_point = current_time - timedelta(minutes=i * 5)
+                        
+                        # 다양한 상태와 신뢰도 생성
+                        if i < 15:  # 최근 75분은 정상
+                            status = "정상"
+                            confidence = np.random.uniform(90, 98)
+                        elif i < 25:  # 그 다음 50분은 이상 가능성
+                            status = "이상"
+                            confidence = np.random.uniform(75, 90)
+                        else:  # 나머지는 정상
+                            status = "정상"
+                            confidence = np.random.uniform(85, 95)
+                        
+                        hydraulic_history.append({
+                            "시간": time_point.strftime('%m-%d %H:%M'),
+                            "상태": status,
+                            "신뢰도": round(confidence, 1),
+                            "결과": "✅" if status == "정상" else "⚠️"
+                        })
+                    
+                    # 최신 데이터부터 표시 (최대 20개)
+                    hydraulic_history = hydraulic_history[:20]
+                    
+                    # 시간대별 진단결과 그래프
+                    st.markdown(f"**📈 {period_name} 시간대별 진단결과**")
+                    
+                    # 그래프 데이터 준비
+                    time_points = [pred["시간"] for pred in hydraulic_history]
+                    confidences = [pred["신뢰도"] for pred in hydraulic_history]
+                    statuses = [pred["상태"] for pred in hydraulic_history]
+                    
+                    # 색상 매핑
+                    colors = []
+                    for status in statuses:
+                        if status == "정상":
+                            colors.append("#10B981")
+                        else:  # 이상
+                            colors.append("#EF4444")
+                    
+                    # 라인 차트 생성
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(
+                        x=time_points,
+                        y=confidences,
+                        mode='lines+markers',
+                        name='진단 신뢰도',
+                        line=dict(color='#05507D', width=2),
+                        marker=dict(color=colors, size=6)
+                    ))
+                    
+                    fig.update_layout(
+                        title=f"{period_name} 진단 신뢰도 추이",
+                        xaxis_title="시간",
+                        yaxis_title="진단 신뢰도 (%)",
+                        height=300,
+                        plot_bgcolor='white',
+                        paper_bgcolor='white',
+                        xaxis=dict(tickangle=45)
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # 상세 이력 테이블 (스크롤 가능한 컨테이너)
+                    st.markdown("**📋 상세 예측 이력:**")
+                    
+                    # 스크롤 가능한 컨테이너 생성
+                    with st.container():
+                        st.markdown("""
+                        <style>
+                        .hydraulic-history-container {
+                            max-height: 400px;
+                            overflow-y: auto;
+                            border: 1px solid #e2e8f0;
+                            border-radius: 8px;
+                            padding: 1rem;
+                            background: #f8fafc;
+                        }
+                        .hydraulic-history-container::-webkit-scrollbar {
+                            width: 8px;
+                        }
+                        .hydraulic-history-container::-webkit-scrollbar-track {
+                            background: #f1f5f9;
+                            border-radius: 4px;
+                        }
+                        .hydraulic-history-container::-webkit-scrollbar-thumb {
+                            background: #cbd5e1;
+                            border-radius: 4px;
+                        }
+                        .hydraulic-history-container::-webkit-scrollbar-thumb:hover {
+                            background: #94a3b8;
+                        }
+                        </style>
+                        """, unsafe_allow_html=True)
+                        
+                        # 스크롤 가능한 컨테이너 시작
+                        container_html = '<div class="hydraulic-history-container">'
+                        
+                        # 유압 예측 이력을 HTML로 생성
+                        for pred in hydraulic_history[:10]:
+                            if pred["상태"] == "정상":
+                                status_color = "#10B981"
+                                bg_color = "#ECFDF5"
+                            else:  # 이상
+                                status_color = "#EF4444"
+                                bg_color = "#FEF2F2"
+                            
+                            container_html += f'<div style="background: {bg_color}; border-radius: 8px; padding: 0.8rem; margin-bottom: 0.5rem;"><div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;"><div style="display: flex; align-items: center; gap: 0.8rem;"><div style="font-weight: 600; color: {status_color}; min-width: 50px;">{pred["시간"]}</div><div style="font-weight: 600; color: #1e293b;">{pred["상태"]}</div></div><div style="font-size: 1.1rem;">{pred["결과"]}</div></div><div style="background: #e5e7eb; border-radius: 10px; height: 8px; overflow: hidden;"><div style="background: {status_color}; height: 100%; width: {pred["신뢰도"]}%; border-radius: 10px; transition: width 0.3s ease;"></div></div><div style="display: flex; justify-content: space-between; margin-top: 0.3rem;"><span style="font-size: 0.8rem; color: #6b7280;">0%</span><span style="font-size: 0.8rem; font-weight: 600; color: {status_color};">{pred["신뢰도"]}%</span><span style="font-size: 0.8rem; color: #6b7280;">100%</span></div></div>'
+                        
+                        container_html += '</div>'
+                        st.markdown(container_html, unsafe_allow_html=True)
+
         
         # AI 설정 및 관리
         st.markdown("### ⚙️ AI 모델 설정 및 관리")
         
-        col1, col2 = st.columns(2)
+        # 설정 탭 생성
+        ai_settings_tab1, ai_settings_tab2 = st.tabs(["🔔 알림 설정", "📊 모델 관리"])
         
-        with col1:
-            st.markdown("#### 🔔 알림 설정")
+        with ai_settings_tab1:
+            st.markdown("#### 🔔 AI 알림 설정")
             
-            # 알림 임계값 설정
-            st.markdown("**설비 이상 예측 알림 임계값:**")
-            col1_1, col1_2 = st.columns(2)
-            with col1_1:
+            # 알림 임계값 설정 섹션
+            st.markdown("**📊 설비 이상 예측 알림 임계값:**")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**🔧 주요 설비 이상:**")
                 bearing_threshold = st.slider("베어링 고장", 0.0, 1.0, 0.6, 0.1, key="bearing_thresh")
                 motor_threshold = st.slider("모터 과부하", 0.0, 1.0, 0.7, 0.1, key="motor_thresh")
-            with col1_2:
+            
+            with col2:
+                st.markdown("**⚙️ 기타 설비 이상:**")
                 roll_threshold = st.slider("롤 정렬 불량", 0.0, 1.0, 0.6, 0.1, key="roll_thresh")
                 lubricant_threshold = st.slider("윤활유 부족", 0.0, 1.0, 0.7, 0.1, key="lubricant_thresh")
             
-            # 유압 시스템 알림 설정
-            st.markdown("**유압 시스템 알림 설정:**")
+            # 유압 시스템 알림 설정 섹션
+            st.markdown("**⚡ 유압 시스템 알림 설정:**")
             hydraulic_threshold = st.slider("이상 감지 임계값", 0.0, 1.0, 0.8, 0.05, key="hydraulic_thresh")
             
-            # 알림 방법 설정
-            st.markdown("**알림 방법:**")
-            email_alerts = st.checkbox("이메일 알림", value=True)
-            sms_alerts = st.checkbox("SMS 알림", value=False)
-            dashboard_alerts = st.checkbox("대시보드 알림", value=True)
+            # 알림 방법 설정 섹션
+            st.markdown("**📱 알림 방법 설정:**")
+            col3, col4 = st.columns(2)
             
-            if st.button("설정 저장", key="save_ai_settings"):
-                st.success("AI 모델 설정이 저장되었습니다.")
+            with col3:
+                email_alerts = st.checkbox("📧 이메일 알림", value=True)
+                sms_alerts = st.checkbox("📱 SMS 알림", value=False)
+            
+            with col4:
+                dashboard_alerts = st.checkbox("🖥️ 대시보드 알림", value=True)
+                push_alerts = st.checkbox("🔔 푸시 알림", value=False)
+            
+            # 설정 저장 버튼
+            # 설정 저장 버튼을 중앙에 독립적으로 배치
+            st.markdown("<br>", unsafe_allow_html=True)
+            col1, col2, col3 = st.columns([1, 1, 1])
+            with col2:
+                if st.button("💾 설정 저장", key="save_ai_settings", use_container_width=True):
+                    st.success("✅ AI 모델 설정이 저장되었습니다.")
         
-        with col2:
-            st.markdown("#### 📊 모델 관리")
+        with ai_settings_tab2:
+            st.markdown("#### 📊 AI 모델 관리")
             
-            # 모델 재학습 설정
-            st.markdown("**자동 재학습 설정:**")
-            col2_1, col2_2 = st.columns(2)
-            with col2_1:
-                st.markdown("**설비 모델:**")
-                st.write("• 재학습 주기: 매일")
-                st.write("• 마지막 재학습: 2024-01-15")
-                st.write("• 다음 재학습: 2024-01-16")
-            with col2_2:
-                st.markdown("**유압 모델:**")
-                st.write("• 재학습 주기: 주 1회")
-                st.write("• 마지막 재학습: 2024-01-12")
-                st.write("• 다음 재학습: 2024-01-19")
+            # 모델 재학습 설정 섹션
+            st.markdown("**🔄 자동 재학습 설정:**")
+            col1, col2 = st.columns(2)
             
-            # 수동 모델 관리
-            st.markdown("**수동 모델 관리:**")
-            col2_3, col2_4 = st.columns(2)
-            with col2_3:
-                if st.button("설비 모델 재학습", key="retrain_equipment"):
-                    st.info("설비 이상 예측 모델 재학습이 시작되었습니다. (예상 소요시간: 30분)")
-            with col2_4:
-                if st.button("유압 모델 재학습", key="retrain_hydraulic"):
-                    st.info("유압 이상 탐지 모델 재학습이 시작되었습니다. (예상 소요시간: 15분)")
+            with col1:
+                st.markdown("**🔧 설비 모델:**")
+                st.info("• 재학습 주기: 매일")
+                st.info("• 마지막 재학습: 2024-01-15")
+                st.info("• 다음 재학습: 2024-01-16")
             
-            # 모델 백업 및 복원
-            st.markdown("**모델 백업:**")
-            if st.button("현재 모델 백업", key="backup_models"):
-                st.success("모델 백업이 완료되었습니다.")
+            with col2:
+                st.markdown("**⚡ 유압 모델:**")
+                st.info("• 재학습 주기: 주 1회")
+                st.info("• 마지막 재학습: 2024-01-12")
+                st.info("• 다음 재학습: 2024-01-19")
+            
+            # 수동 모델 관리 섹션
+            st.markdown("**🔧 수동 모델 관리:**")
+            col3, col4 = st.columns(2)
+            
+            with col3:
+                if st.button("🔧 설비 모델 재학습", key="retrain_equipment"):
+                    st.info("🔧 설비 이상 예측 모델 재학습이 시작되었습니다. (예상 소요시간: 30분)")
+            
+            with col4:
+                if st.button("⚡ 유압 모델 재학습", key="retrain_hydraulic"):
+                    st.info("⚡ 유압 이상 탐지 모델 재학습이 시작되었습니다. (예상 소요시간: 15분)")
+            
+            # 모델 백업 및 복원 섹션
+            st.markdown("**💾 모델 백업 및 복원:**")
+            col5, col6 = st.columns(2)
+            
+            with col5:
+                if st.button("💾 현재 모델 백업", key="backup_models"):
+                    st.success("✅ 모델 백업이 완료되었습니다.")
+            
+            with col6:
+                if st.button("🔄 모델 복원", key="restore_models"):
+                    st.info("🔄 모델 복원 옵션을 선택하세요.")
         
         # 상세 분석 도구
         st.markdown("### 🔍 상세 분석 도구")
@@ -3030,6 +4483,39 @@ def main():
         st.write("설비별 상태를 확인하고 관리할 수 있습니다.")
         
         # ======================
+        # 기간 선택 (맨 위로 이동)
+        # ======================
+        st.markdown("### 📅 기간 선택")
+        
+        # 사이드바 날짜 설정 가져오기
+        sidebar_date_mode = st.session_state.get('sidebar_date_mode', '일자별')
+        sidebar_date = st.session_state.get('sidebar_selected_date_stored', datetime.now().date())
+        sidebar_date_range = st.session_state.get('sidebar_date_range_stored', (datetime.now().date() - timedelta(days=7), datetime.now().date()))
+        
+        col1, col2 = st.columns([2, 2])
+        with col1:
+            col_radio, col_date1 = st.columns([1, 2])
+            with col_radio:
+                date_mode = st.radio(
+                    "📅 조회 모드", 
+                    ["일자별", "기간별"], 
+                    index=0 if sidebar_date_mode == "일자별" else 1, 
+                    key="equipment_tab_date_mode",
+                    horizontal=True,
+                    label_visibility="collapsed"
+                )
+            with col_date1:
+                if date_mode == "일자별":
+                    selected_date = st.date_input("조회 일자", value=sidebar_date, key="equipment_tab_selected_date")
+                else:
+                    start_date = st.date_input("시작일", value=sidebar_date_range[0], key="equipment_tab_start_date")
+        with col2:
+            if date_mode == "기간별":
+                end_date = st.date_input("종료일", value=sidebar_date_range[1], key="equipment_tab_end_date")
+            else:
+                st.write("")  # 빈 공간
+        
+        # ======================
         # 데이터 로드
         # ======================
         try:
@@ -3084,6 +4570,8 @@ def main():
                     <div class="kpi-value" style="font-size:1.3rem;">{avg_efficiency:.1f}%</div>
                 </div>
                 """, unsafe_allow_html=True)
+        
+
         
         # ======================
         # 설비 목록 테이블
@@ -3451,29 +4939,374 @@ def main():
                     if st.button("❌ 닫기", use_container_width=True, key="close_manager_list"):
                         st.session_state.show_equipment_manager_list = False
                         st.rerun()
+        
+        # ======================
+        # 설비 분석 영역
+        # ======================
+        st.markdown("---")
+        st.markdown("### 📈 설비 분석")
+        
+        # 분석 설정
+        col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+        
+        with col1:
+            # 분석 유형 선택
+            analysis_type = st.selectbox(
+                "분석 유형",
+                ["센서 데이터 통합", "설비 상태별 분포", "효율성 분석", "공정별 설비 현황"],
+                key="equipment_analysis_type"
+            )
+        
+        with col2:
+            # 기간 설정 옵션
+            analysis_date_mode = st.selectbox("분석 모드", ["일자별", "기간별"], key="equipment_date_mode")
+        
+        with col3:
+            if analysis_date_mode == "기간별":
+                # 기간 설정
+                analysis_start_date = st.date_input("분석 시작일", value=datetime.now().date() - timedelta(days=7), key="equipment_start_date")
+            else:
+                # 일자 설정
+                sidebar_date = st.session_state.get('sidebar_selected_date_stored', datetime.now().date())
+                analysis_date = st.date_input("분석 일자", value=sidebar_date, key="equipment_analysis_date")
+        
+        with col4:
+            if analysis_date_mode == "기간별":
+                # 기간 설정
+                analysis_end_date = st.date_input("분석 종료일", value=datetime.now().date(), key="equipment_end_date")
+            else:
+                st.write("")  # 빈 공간
+        
+        # 분석 결과 바로 표시
+        if analysis_type == "센서 데이터 통합":
+            # 통합 센서 데이터 그래프
+            st.markdown("**📊 센서 데이터 통합 추세**")
+            
+            # 시뮬레이션 데이터 생성
+            if analysis_date_mode == "일자별":
+                dates = pd.date_range(start=analysis_date, end=analysis_date + timedelta(days=1), freq='H')[:-1]  # 해당 일자의 24시간
+            else:  # 기간별
+                dates = pd.date_range(start=analysis_start_date, end=analysis_end_date, freq='H')
+            temp_data = np.random.normal(25, 5, len(dates)) + np.sin(np.arange(len(dates)) * 0.1) * 3
+            pressure_data = np.random.normal(100, 15, len(dates)) + np.cos(np.arange(len(dates)) * 0.05) * 10
+            vibration_data = np.random.normal(0.5, 0.2, len(dates)) + np.sin(np.arange(len(dates)) * 0.2) * 0.1
+            
+            fig_combined = go.Figure()
+            
+            # 온도 데이터 (첫 번째 Y축)
+            fig_combined.add_trace(go.Scatter(
+                x=dates,
+                y=temp_data,
+                mode='lines',
+                name='온도 (°C)',
+                line=dict(color='#ef4444', width=2),
+                yaxis='y'
+            ))
+            
+            # 압력 데이터 (두 번째 Y축)
+            fig_combined.add_trace(go.Scatter(
+                x=dates,
+                y=pressure_data,
+                mode='lines',
+                name='압력 (kPa)',
+                line=dict(color='#3b82f6', width=2),
+                yaxis='y2'
+            ))
+            
+            # 진동 데이터 (세 번째 Y축)
+            fig_combined.add_trace(go.Scatter(
+                x=dates,
+                y=vibration_data,
+                mode='lines',
+                name='진동 (mm/s)',
+                line=dict(color='#10b981', width=2),
+                yaxis='y3'
+            ))
+            
+            # 제목 동적 설정
+            if analysis_date_mode == "일자별":
+                title_text = f"센서 데이터 통합 추세 ({analysis_date.strftime('%Y-%m-%d')})"
+            else:
+                title_text = f"센서 데이터 통합 추세 ({analysis_start_date.strftime('%Y-%m-%d')} ~ {analysis_end_date.strftime('%Y-%m-%d')})"
+            
+            fig_combined.update_layout(
+                title=title_text,
+                xaxis_title="시간",
+                height=400,
+                plot_bgcolor='white',
+                paper_bgcolor='white',
+                showlegend=True,
+                yaxis=dict(title="온도 (°C)", titlefont=dict(color="#ef4444"), tickfont=dict(color="#ef4444")),
+                yaxis2=dict(title="압력 (kPa)", titlefont=dict(color="#3b82f6"), tickfont=dict(color="#3b82f6"), anchor="x", overlaying="y", side="right"),
+                yaxis3=dict(title="진동 (mm/s)", titlefont=dict(color="#10b981"), tickfont=dict(color="#10b981"), anchor="free", overlaying="y", side="right", position=0.95)
+            )
+            st.plotly_chart(fig_combined, use_container_width=True)
+        
+        elif analysis_type == "설비 상태별 분포":
+            # 설비 상태별 분포 분석
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**🏭 설비 상태 분포**")
+                status_counts = {
+                    '정상': normal_count,
+                    '주의': warning_count,
+                    '오류': error_count
+                }
+                
+                fig_pie = go.Figure(data=[go.Pie(
+                    labels=list(status_counts.keys()),
+                    values=list(status_counts.values()),
+                    hole=0.4,
+                    marker_colors=['#10b981', '#f59e0b', '#ef4444']
+                )])
+                
+                fig_pie.update_layout(
+                    title="설비 상태별 분포",
+                    height=400,
+                    showlegend=True,
+                    plot_bgcolor='white',
+                    paper_bgcolor='white'
+                )
+                st.plotly_chart(fig_pie, use_container_width=True)
+            
+            with col2:
+                st.markdown("**📈 상태별 추세**")
+                # 시뮬레이션 데이터 생성
+                if analysis_date_mode == "일자별":
+                    dates = pd.date_range(start=analysis_date, end=analysis_date, freq='D')
+                else:  # 기간별
+                    dates = pd.date_range(start=analysis_start_date, end=analysis_end_date, freq='D')
+                normal_trend = [normal_count + np.random.randint(-2, 3) for _ in range(len(dates))]
+                warning_trend = [warning_count + np.random.randint(-1, 2) for _ in range(len(dates))]
+                error_trend = [error_count + np.random.randint(-1, 2) for _ in range(len(dates))]
+                
+                fig_trend = go.Figure()
+                fig_trend.add_trace(go.Scatter(x=dates, y=normal_trend, mode='lines+markers', name='정상', line=dict(color='#10b981')))
+                fig_trend.add_trace(go.Scatter(x=dates, y=warning_trend, mode='lines+markers', name='주의', line=dict(color='#f59e0b')))
+                fig_trend.add_trace(go.Scatter(x=dates, y=error_trend, mode='lines+markers', name='오류', line=dict(color='#ef4444')))
+                
+                fig_trend.update_layout(
+                    title="설비 상태별 추세",
+                    xaxis_title="날짜",
+                    yaxis_title="설비 수",
+                    height=400,
+                    plot_bgcolor='white',
+                    paper_bgcolor='white',
+                    showlegend=True
+                )
+                st.plotly_chart(fig_trend, use_container_width=True)
+        
+        elif analysis_type == "효율성 분석":
+            # 효율성 분석
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**📊 설비별 효율성 비교**")
+                # 효율성 기준으로 정렬 (상위 10개)
+                sorted_equipment = sorted(equipment_list, key=lambda x: x['efficiency'], reverse=True)[:10]
+                
+                fig_bar = go.Figure(data=[go.Bar(
+                    x=[eq['name'] for eq in sorted_equipment],
+                    y=[eq['efficiency'] for eq in sorted_equipment],
+                    marker_color=['#10b981' if eq['efficiency'] >= 85 else '#f59e0b' if eq['efficiency'] >= 70 else '#ef4444' for eq in sorted_equipment]
+                )])
+                
+                fig_bar.update_layout(
+                    title="설비별 효율성 (상위 10개)",
+                    xaxis_title="설비명",
+                    yaxis_title="효율성 (%)",
+                    height=400,
+                    plot_bgcolor='white',
+                    paper_bgcolor='white',
+                    xaxis=dict(tickangle=45)
+                )
+                st.plotly_chart(fig_bar, use_container_width=True)
+            
+            with col2:
+                st.markdown("**📈 효율성 분포**")
+                efficiencies = [eq['efficiency'] for eq in equipment_list]
+                
+                fig_hist = go.Figure(data=[go.Histogram(
+                    x=efficiencies,
+                    nbinsx=10,
+                    marker_color='#8b5cf6',
+                    opacity=0.7
+                )])
+                
+                fig_hist.update_layout(
+                    title="설비 효율성 분포",
+                    xaxis_title="효율성 (%)",
+                    yaxis_title="설비 수",
+                    height=400,
+                    plot_bgcolor='white',
+                    paper_bgcolor='white'
+                )
+                
+                # 평균선 추가
+                fig_hist.add_vline(
+                    x=avg_efficiency,
+                    line_dash="dash",
+                    line_color="red",
+                    annotation_text=f"평균: {avg_efficiency:.1f}%",
+                    annotation_position="top right"
+                )
+                
+                st.plotly_chart(fig_hist, use_container_width=True)
+            
+            # 효율성 개선 제안
+            st.markdown("**💡 효율성 개선 제안**")
+            low_efficiency_equipment = [eq for eq in equipment_list if eq['efficiency'] < 70]
+            
+            if low_efficiency_equipment:
+                st.warning(f"⚠️ 효율성이 70% 미만인 설비가 {len(low_efficiency_equipment)}개 있습니다.")
+                for eq in low_efficiency_equipment[:3]:  # 상위 3개만 표시
+                    st.info(f"• {eq['name']}: 현재 효율성 {eq['efficiency']}% - 정비 점검 권장")
+            else:
+                st.success("✅ 모든 설비의 효율성이 양호한 상태입니다.")
+        
+        elif analysis_type == "공정별 설비 현황":
+            # 공정별 설비 현황 분석
+            st.markdown("**🏭 공정별 설비 현황**")
+            
+            # 공정별 데이터 생성 (시뮬레이션)
+            process_data = {
+                '제철공정': {'total': 15, 'normal': 12, 'warning': 2, 'error': 1, 'avg_efficiency': 87.5},
+                '압연공정': {'total': 22, 'normal': 18, 'warning': 3, 'error': 1, 'avg_efficiency': 82.3},
+                '조강공정': {'total': 8, 'normal': 7, 'warning': 1, 'error': 0, 'avg_efficiency': 91.2},
+                '정련공정': {'total': 12, 'normal': 10, 'warning': 2, 'error': 0, 'avg_efficiency': 85.7},
+                '주조공정': {'total': 18, 'normal': 15, 'warning': 2, 'error': 1, 'avg_efficiency': 79.8}
+            }
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # 공정별 설비 수
+                fig_process = go.Figure(data=[go.Bar(
+                    x=list(process_data.keys()),
+                    y=[data['total'] for data in process_data.values()],
+                    marker_color='#3b82f6',
+                    text=[data['total'] for data in process_data.values()],
+                    textposition='auto'
+                )])
+                
+                fig_process.update_layout(
+                    title="공정별 설비 수",
+                    xaxis_title="공정",
+                    yaxis_title="설비 수",
+                    height=400,
+                    plot_bgcolor='white',
+                    paper_bgcolor='white'
+                )
+                st.plotly_chart(fig_process, use_container_width=True)
+            
+            with col2:
+                # 공정별 평균 효율성
+                fig_efficiency = go.Figure(data=[go.Bar(
+                    x=list(process_data.keys()),
+                    y=[data['avg_efficiency'] for data in process_data.values()],
+                    marker_color=['#10b981' if eff >= 85 else '#f59e0b' if eff >= 75 else '#ef4444' for eff in [data['avg_efficiency'] for data in process_data.values()]],
+                    text=[f"{eff:.1f}%" for eff in [data['avg_efficiency'] for data in process_data.values()]],
+                    textposition='auto'
+                )])
+                
+                fig_efficiency.update_layout(
+                    title="공정별 평균 효율성",
+                    xaxis_title="공정",
+                    yaxis_title="평균 효율성 (%)",
+                    height=400,
+                    plot_bgcolor='white',
+                    paper_bgcolor='white'
+                )
+                st.plotly_chart(fig_efficiency, use_container_width=True)
+            
+            # 공정별 상세 현황 테이블
+            st.markdown("**📋 공정별 상세 현황**")
+            table_data = []
+            for process, data in process_data.items():
+                status_ratio = f"{data['normal']}/{data['total']} ({data['normal']/data['total']*100:.1f}%)"
+                table_data.append({
+                    "공정명": process,
+                    "총 설비": data['total'],
+                    "정상": data['normal'],
+                    "주의": data['warning'],
+                    "오류": data['error'],
+                    "정상 비율": status_ratio,
+                    "평균 효율성": f"{data['avg_efficiency']:.1f}%"
+                })
+            
+            df_process = pd.DataFrame(table_data)
+            st.dataframe(df_process, use_container_width=True, height=300)
+            
+            # 공정별 개선 제안
+            st.markdown("**💡 공정별 개선 제안**")
+            low_efficiency_processes = [(process, data) for process, data in process_data.items() if data['avg_efficiency'] < 80]
+            
+            if low_efficiency_processes:
+                st.warning("⚠️ 효율성이 낮은 공정이 있습니다.")
+                for process, data in low_efficiency_processes:
+                    st.info(f"• {process}: 평균 효율성 {data['avg_efficiency']:.1f}% - 설비 점검 및 최적화 필요")
+            else:
+                st.success("✅ 모든 공정의 효율성이 양호한 상태입니다.")
 
     with tabs[2]:  # 알림 관리
         st.markdown('<div class="main-header no-translate" translate="no">🚨 알림 관리</div>', unsafe_allow_html=True)
         st.write("실시간 알림(이상/경보/정보 등)을 확인하고, 처리 상태를 관리할 수 있습니다.")
         
-        # API 토글 상태에 따라 데이터 가져오기
+        # ======================
+        # 기간 선택 (맨 위로 이동)
+        # ======================
+        st.markdown("### 📅 기간 선택")
+        
+        # 사이드바 날짜 설정 가져오기
+        sidebar_date_mode = st.session_state.get('sidebar_date_mode', '일자별')
+        sidebar_date = st.session_state.get('sidebar_selected_date_stored', datetime.now().date())
+        sidebar_date_range = st.session_state.get('sidebar_date_range_stored', (datetime.now().date() - timedelta(days=7), datetime.now().date()))
+    
+        col1, col2 = st.columns([2, 2])
+        with col1:
+            col_radio, col_date1 = st.columns([1, 2])
+            with col_radio:
+                date_mode = st.radio(
+                    "📅 조회 모드", 
+                    ["일자별", "기간별"], 
+                    index=0 if sidebar_date_mode == "일자별" else 1, 
+                    key="alert_date_mode",
+                    horizontal=True,
+                    label_visibility="collapsed"
+                )
+            with col_date1:
+                if date_mode == "일자별":
+                    selected_date = st.date_input("조회 일자", value=sidebar_date, key="alert_selected_date")
+                else:
+                    start_date = st.date_input("시작일", value=sidebar_date_range[0], key="alert_start_date")
+        with col2:
+            if date_mode == "기간별":
+                end_date = st.date_input("종료일", value=sidebar_date_range[1], key="alert_end_date")
+            else:
+                st.write("")  # 빈 공간
+        
+                # API 토글 상태에 따라 데이터 가져오기
         if use_real_api:
             try:
                 alerts = get_alerts_from_api(use_real_api)
+                equipment_data = get_equipment_status_from_api(use_real_api)
             except Exception as e:
                 st.error(f"API 데이터 가져오기 오류: {e}")
                 alerts = generate_alert_data()
+                equipment_data = generate_equipment_status()
         else:
             alerts = generate_alert_data()
+            equipment_data = generate_equipment_status()
         
         adf = pd.DataFrame(alerts)
+        
         
         # 빈 데이터프레임 처리
         if adf.empty:
             st.info("알림 데이터가 없습니다.")
             st.button("상태 변경(확장)", disabled=True, key="alert_status_btn_empty")
             st.download_button("알림 이력 다운로드 (CSV)", "", file_name="alerts.csv", mime="text/csv", key="alert_csv_btn_empty", disabled=True)
-            st.button("엑셀 다운로드(확장)", disabled=True, key="alert_excel_btn_empty")
             return
         
         # 상단 KPI 카드
@@ -3527,6 +5360,8 @@ def main():
             </div>
             """, unsafe_allow_html=True)
         
+
+        
         # 필터 및 검색
         st.markdown("### 🔍 알림 검색 및 필터")
         col1, col2, col3, col4 = st.columns(4)
@@ -3546,8 +5381,20 @@ def main():
         if 'status' not in adf.columns:
             adf['status'] = '미처리'
         
-        # 필터링 적용
-        filtered = adf.copy()
+        # manager와 interlock_bypass 컬럼이 없을 경우 기본값 추가
+        if 'manager' not in adf.columns:
+            adf['manager'] = ''
+        if 'interlock_bypass' not in adf.columns:
+            adf['interlock_bypass'] = ''
+        
+        # 날짜 필터링 적용
+        adf['date'] = pd.to_datetime(adf['time']).dt.date
+        if date_mode == "일자별":
+            filtered = adf[adf['date'] == selected_date].copy()
+        else:  # 기간별
+            filtered = adf[(adf['date'] >= start_date) & (adf['date'] <= end_date)].copy()
+        
+        # 기타 필터링 적용
         if eq_filter != "전체":
             filtered = filtered[filtered['equipment'] == eq_filter]
         if sev_filter != "전체":
@@ -3567,11 +5414,27 @@ def main():
         st.markdown("### 📋 알림 목록")
         
         # 필요한 컬럼들이 있는지 확인하고 표시
-        available_columns = ['equipment', 'issue', 'time', '심각도', 'status']
+        available_columns = ['equipment', 'issue', 'time', '심각도', 'status', 'manager', 'interlock_bypass']
         if 'details' in filtered.columns:
             available_columns.append('details')
         
-        st.dataframe(filtered[available_columns], use_container_width=True, height=350)
+        # 컬럼명 한글화
+        column_mapping = {
+            'equipment': '설비',
+            'issue': '이슈',
+            'time': '시간',
+            '심각도': '심각도',
+            'status': '상태',
+            'manager': '처리자',
+            'interlock_bypass': '인터락/바이패스',
+            'details': '상세내용'
+        }
+        
+        # 표시할 컬럼만 선택하고 한글명으로 변경
+        display_df = filtered[available_columns].copy()
+        display_df.columns = [column_mapping.get(col, col) for col in display_df.columns]
+        
+        st.dataframe(display_df, use_container_width=True, height=350)
         
         # 상세정보 패널
         if not filtered.empty:
@@ -3582,57 +5445,68 @@ def main():
             alert_detail_tab1, alert_detail_tab2, alert_detail_tab3 = st.tabs(["기본 정보", "처리 이력", "관련 데이터"])
             
             with alert_detail_tab1:
+                # 기본 정보 섹션
+                st.markdown("#### 📋 알림 기본 정보")
                 col1, col2 = st.columns(2)
+                
                 with col1:
-                    st.markdown("**알림 기본 정보**")
-                    st.write(f"**설비:** {filtered.loc[selected, 'equipment']}")
-                    st.write(f"**알림 내용:** {filtered.loc[selected, 'issue']}")
-                    st.write(f"**발생 시간:** {filtered.loc[selected, 'time']}")
-                    st.write(f"**심각도:** {filtered.loc[selected, 'severity']}")
+                    st.markdown("**🔧 설비 정보**")
+                    st.info(f"**설비명:** {filtered.loc[selected, 'equipment']}")
+                    st.info(f"**발생 시간:** {filtered.loc[selected, 'time']}")
+                    st.info(f"**심각도:** {filtered.loc[selected, 'severity']}")
                 
                 with col2:
-                    st.markdown("**처리 정보**")
-                    st.write(f"**현재 상태:** {filtered.loc[selected, 'status']}")
+                    st.markdown("**⚙️ 처리 정보**")
+                    st.info(f"**현재 상태:** {filtered.loc[selected, 'status']}")
                     
                     # 심각도별 색상 표시
                     severity = filtered.loc[selected, 'severity']
                     if severity == 'error':
-                        st.error("🚨 긴급 조치가 필요한 알림입니다.")
+                        st.error("🚨 **긴급 조치가 필요한 알림입니다.**")
                     elif severity == 'warning':
-                        st.warning("⚠️ 주의가 필요한 알림입니다.")
+                        st.warning("⚠️ **주의가 필요한 알림입니다.**")
                     else:
-                        st.info("ℹ️ 정보성 알림입니다.")
-                    
-            # details 컬럼이 있는 경우에만 표시
-            if 'details' in filtered.columns:
-                st.write(f"**상세 설명:** {filtered.loc[selected, 'details']}")
-            else:
-                st.write(f"**상세 설명:** 상세 정보 없음")
+                        st.info("ℹ️ **정보성 알림입니다.**")
+                
+                # 상세 설명 섹션
+                st.markdown("#### 📝 상세 설명")
+                if 'details' in filtered.columns and filtered.loc[selected, 'details']:
+                    st.write(filtered.loc[selected, 'details'])
+                else:
+                    st.info("상세 설명이 없습니다.")
             
             with alert_detail_tab2:
-                st.markdown("**처리 상태 관리**")
+                # 처리 상태 관리 섹션
+                st.markdown("#### 🔄 처리 상태 관리")
                 
                 col1, col2 = st.columns(2)
+                
                 with col1:
-                    st.markdown("**상태 변경**")
+                    st.markdown("**📊 상태 변경**")
                     current_status = filtered.loc[selected, 'status']
                     new_status = st.selectbox("처리 상태", ["미처리", "처리중", "완료"], 
                                             index=["미처리", "처리중", "완료"].index(current_status), 
                                             key=f"alert_status_{selected}")
                     
-                    if st.button("상태 변경", key=f"alert_status_btn_{selected}"):
-                        st.success(f"알림 상태가 '{new_status}'로 변경되었습니다.")
+                    # 상태 변경 버튼을 우측에 배치
+                    col1_1, col1_2, col1_3 = st.columns([1, 1, 1])
+                    with col1_3:
+                        if st.button("상태 변경", key=f"alert_status_btn_{selected}"):
+                            st.success(f"알림 상태가 '{new_status}'로 변경되었습니다.")
                 
                 with col2:
-                    st.markdown("**처리 메모**")
+                    st.markdown("**📝 처리 메모**")
                     processing_note = st.text_area("처리 내용", key=f"processing_note_{selected}")
                     assigned_to = st.text_input("담당자", key=f"assigned_to_{selected}")
                     
-                    if st.button("메모 저장", key=f"save_note_{selected}"):
-                        st.success("처리 메모가 저장되었습니다.")
+                    # 저장 버튼을 우측으로 배치
+                    col2_1, col2_2, col2_3 = st.columns([1, 1, 1])
+                    with col2_3:
+                        if st.button("메모 저장", key=f"save_note_{selected}"):
+                            st.success("처리 메모가 저장되었습니다.")
                 
-                # 처리 이력 (가상 데이터)
-                st.markdown("**처리 이력**")
+                # 처리 이력 섹션
+                st.markdown("#### 📈 처리 이력")
                 processing_history = [
                     {"시간": filtered.loc[selected, 'time'], "상태": "발생", "담당자": "-", "메모": "알림 발생"},
                     {"시간": "2024-01-15 14:30", "상태": "처리중", "담당자": "홍길동", "메모": "점검 시작"},
@@ -3640,27 +5514,26 @@ def main():
                 ]
                 
                 history_df = pd.DataFrame(processing_history)
-                st.dataframe(history_df, use_container_width=True, height=150)
+                st.dataframe(history_df, use_container_width=True, height=200)
             
             with alert_detail_tab3:
-                st.markdown("**관련 데이터 분석**")
-                
-                # 해당 설비의 관련 데이터
+                # 관련 데이터 분석 섹션
+                st.markdown("#### 🔍 관련 데이터 분석")
                 equipment_name = filtered.loc[selected, 'equipment']
                 
                 col1, col2 = st.columns(2)
+                
                 with col1:
-                    st.markdown("**설비 상태**")
-                    # 설비 상태 데이터 가져오기
+                    st.markdown("**🔧 설비 상태**")
                     if use_real_api:
                         try:
                             equipment_data = get_equipment_status_from_api(use_real_api)
                             equipment_df = pd.DataFrame(equipment_data)
                             equipment_info = equipment_df[equipment_df['name'] == equipment_name]
                             if not equipment_info.empty:
-                                st.write(f"**현재 상태:** {equipment_info.iloc[0]['status']}")
-                                st.write(f"**가동률:** {equipment_info.iloc[0]['efficiency']}%")
-                                st.write(f"**마지막 정비:** {equipment_info.iloc[0]['last_maintenance']}")
+                                st.success(f"**현재 상태:** {equipment_info.iloc[0]['status']}")
+                                st.success(f"**가동률:** {equipment_info.iloc[0]['efficiency']}%")
+                                st.success(f"**마지막 정비:** {equipment_info.iloc[0]['last_maintenance']}")
                             else:
                                 st.info("설비 정보를 찾을 수 없습니다.")
                         except:
@@ -3669,45 +5542,64 @@ def main():
                         st.info("API 연동 시 설비 정보를 확인할 수 있습니다.")
                 
                 with col2:
-                    st.markdown("**유사 알림 패턴**")
-                    # 같은 설비의 유사 알림 찾기
+                    st.markdown("**📊 유사 알림 패턴**")
                     similar_alerts = filtered[filtered['equipment'] == equipment_name]
                     if len(similar_alerts) > 1:
-                        st.write(f"**같은 설비 알림:** {len(similar_alerts)}건")
-                        st.write(f"**최근 발생:** {similar_alerts['time'].iloc[-1]}")
+                        st.warning(f"**같은 설비 알림:** {len(similar_alerts)}건")
+                        st.warning(f"**최근 발생:** {similar_alerts['time'].iloc[-1]}")
                     else:
-                        st.write("**같은 설비 알림:** 없음")
+                        st.success("**같은 설비 알림:** 없음")
         
         # 알림 관리 기능
         st.markdown("### ⚙️ 알림 관리 기능")
-        col1, col2, col3 = st.columns(3)
+        
+        # 세로 구분선이 있는 3개 컬럼
+        col1, col2, col3, col4, col5 = st.columns([1, 0.05, 1, 0.05, 1])
         
         with col1:
-            st.markdown("**일괄 처리**")
+            st.markdown("**📋 일괄 처리**")
             if not filtered.empty:
                 bulk_status = st.selectbox("일괄 상태 변경", ["미처리", "처리중", "완료"], key="bulk_status")
-                if st.button("선택된 알림 일괄 처리", key="bulk_process"):
-                    st.success(f"선택된 {len(filtered)}건의 알림이 '{bulk_status}'로 변경되었습니다.")
+                # 일괄 처리 버튼을 우측에 배치
+                col1_1, col1_2, col1_3 = st.columns([1, 1, 1])
+                with col1_3:
+                    if st.button("일괄 처리", key="bulk_process"):
+                        st.success(f"선택된 {len(filtered)}건의 알림이 '{bulk_status}'로 변경되었습니다.")
         
+        # 첫 번째 세로 구분선
         with col2:
-            st.markdown("**알림 설정**")
+            st.markdown('<div style="border-left: 2px solid #e2e8f0; height: 200px; margin: 0 auto;"></div>', unsafe_allow_html=True)
+        
+        with col3:
+            st.markdown("**⚙️ 알림 설정**")
             auto_acknowledge = st.checkbox("자동 확인", value=False, key="auto_ack")
             notification_sound = st.checkbox("알림음", value=True, key="notification_sound_checkbox")
             email_notification = st.checkbox("이메일 알림", value=False, key="email_notification")
             
-            if st.button("설정 저장", key="save_alert_settings_alerts"):
-                st.success("알림 설정이 저장되었습니다.")
+            # 설정 저장 버튼을 알림 설정 우측편에 배치
+            col3_1, col3_2 = st.columns([2, 1])
+            with col3_2:
+                if st.button("설정 저장", key="save_alert_settings_alerts", use_container_width=True):
+                    st.success("알림 설정이 저장되었습니다.")
         
-        with col3:
-            st.markdown("**데이터 내보내기**")
+        # 두 번째 세로 구분선
+        with col4:
+            st.markdown('<div style="border-left: 2px solid #e2e8f0; height: 200px; margin: 0 auto;"></div>', unsafe_allow_html=True)
+        
+        with col5:
+            st.markdown("**💾 데이터 내보내기**")
             export_format = st.selectbox("내보내기 형식", ["CSV", "Excel", "PDF"], key="export_format")
-            if st.button("데이터 내보내기", key="export_data"):
-                st.success(f"{export_format} 형식으로 데이터 내보내기가 시작되었습니다.")
+            # 데이터 내보내기 버튼을 우측에 배치
+            col5_1, col5_2, col5_3 = st.columns([1, 1, 1])
+            with col5_3:
+                if st.button("데이터 내보내기", key="export_data"):
+                    st.success(f"{export_format} 형식으로 데이터 내보내기가 시작되었습니다.")
         
         # 알림 통계 및 분석
         st.markdown("### 📈 알림 통계 및 분석")
         
-        col1, col2 = st.columns(2)
+        # 세로 구분선이 있는 2개 컬럼
+        col1, col2, col3 = st.columns([1, 0.05, 1])
         
         with col1:
             st.markdown("**심각도별 알림 분포**")
@@ -3723,11 +5615,52 @@ def main():
             )
             st.plotly_chart(fig, use_container_width=True)
         
+        # 세로 구분선
         with col2:
+            st.markdown('<div style="border-left: 2px solid #e2e8f0; height: 400px; margin: 0 auto;"></div>', unsafe_allow_html=True)
+        
+        with col3:
             st.markdown("**설비별 알림 발생 현황**")
-            equipment_counts = adf['equipment'].value_counts().head(10)
             
-            fig = go.Figure(data=[go.Bar(x=equipment_counts.values, y=equipment_counts.index, orientation='h')])
+            # 실제 알림 데이터에서 설비별 분석
+            if not filtered.empty:
+                equipment_counts = filtered['equipment'].value_counts().head(10)
+            else:
+                equipment_counts = adf['equipment'].value_counts().head(10)
+            
+            # 설비별 알림 건수와 설비 상태 정보 결합
+            equipment_df = pd.DataFrame(equipment_data)
+            equipment_status_dict = dict(zip(equipment_df['name'], equipment_df['status']))
+            
+            # 설비별 알림 건수에 상태 정보 추가
+            equipment_data_for_chart = []
+            for equipment, count in equipment_counts.items():
+                status = equipment_status_dict.get(equipment, '알 수 없음')
+                equipment_data_for_chart.append({
+                    'equipment': equipment,
+                    'count': count,
+                    'status': status
+                })
+            
+            # 상태별 색상 매핑
+            color_map = {
+                '정상': '#10b981',
+                '점검중': '#f59e0b',
+                '고장': '#ef4444',
+                '알 수 없음': '#6b7280'
+            }
+            
+            colors = [color_map.get(data['status'], '#6b7280') for data in equipment_data_for_chart]
+            
+            fig = go.Figure(data=[go.Bar(
+                x=[data['count'] for data in equipment_data_for_chart], 
+                y=[data['equipment'] for data in equipment_data_for_chart], 
+                orientation='h',
+                marker_color=colors,
+                text=[f"{data['count']}건 ({data['status']})" for data in equipment_data_for_chart],
+                textposition='auto'
+            )])
+            
             fig.update_layout(
                 title="설비별 알림 발생 건수 (상위 10개)",
                 height=300,
@@ -3736,15 +5669,27 @@ def main():
                 xaxis_title="알림 건수",
                 yaxis_title="설비명"
             )
+            # x축을 정수로 표시 (1, 2, 3, 4...)
+            fig.update_xaxes(tickmode='linear', dtick=1, range=[0, max(equipment_counts.values) + 1])
             st.plotly_chart(fig, use_container_width=True)
         
         # 시간대별 알림 분석
         st.markdown("**시간대별 알림 발생 패턴**")
         
-        # 시간대별 알림 개수 (가상 데이터)
-        hours = list(range(24))
-        alert_counts = [np.random.randint(0, 8) for _ in hours]
-        time_trend_df = pd.DataFrame({'시간': hours, '알림 수': alert_counts})
+        # 실제 알림 데이터에서 시간대별 분석
+        if not filtered.empty:
+            filtered['hour'] = pd.to_datetime(filtered['time']).dt.hour
+            hourly_counts = filtered['hour'].value_counts().sort_index()
+            
+            # 0-23시까지 모든 시간대에 대해 데이터 생성
+            hours = list(range(24))
+            alert_counts = [hourly_counts.get(hour, 0) for hour in hours]
+            time_trend_df = pd.DataFrame({'시간': hours, '알림 수': alert_counts})
+        else:
+            # 데이터가 없을 경우 기본값
+            hours = list(range(24))
+            alert_counts = [0] * 24
+            time_trend_df = pd.DataFrame({'시간': hours, '알림 수': alert_counts})
         
         fig = go.Figure()
         fig.add_trace(go.Scatter(
@@ -3762,21 +5707,151 @@ def main():
             plot_bgcolor='white',
             paper_bgcolor='white'
         )
+        # y축을 정수로 표시
+        fig.update_yaxes(tickmode='linear', dtick=1)
         st.plotly_chart(fig, use_container_width=True)
+        
+        # 알림 처리 결과 분석 (인터락/바이패스)
+        st.markdown("**알림 처리 결과 분석 (인터락/바이패스)**")
+        
+        # 기간별 처리 결과 데이터 생성
+        if not filtered.empty and 'interlock_bypass' in filtered.columns:
+            # 날짜별로 그룹화하여 인터락/바이패스 건수 계산
+            filtered['date'] = pd.to_datetime(filtered['time']).dt.date
+            
+            # date_mode에 따라 start_date와 end_date 설정
+            if date_mode == "일자별":
+                start_date = selected_date
+                end_date = selected_date
+            else:  # 기간별
+                # start_date와 end_date는 이미 위에서 정의됨
+                pass
+            
+            date_range = pd.date_range(start=start_date, end=end_date, freq='D')
+            
+            interlock_data = []
+            bypass_data = []
+            
+            for date in date_range:
+                date_str = date.strftime('%Y-%m-%d')
+                daily_data = filtered[filtered['date'] == date.date()]
+                
+                interlock_count = len(daily_data[daily_data['interlock_bypass'] == '인터락'])
+                bypass_count = len(daily_data[daily_data['interlock_bypass'] == '바이패스'])
+                
+                interlock_data.append(interlock_count)
+                bypass_data.append(bypass_count)
+            
+            # 막대 그래프 생성
+            fig = go.Figure()
+            
+            fig.add_trace(go.Bar(
+                x=[d.strftime('%m/%d') for d in date_range],
+                y=interlock_data,
+                name='인터락',
+                marker_color='#ef4444',
+                opacity=0.8
+            ))
+            
+            fig.add_trace(go.Bar(
+                x=[d.strftime('%m/%d') for d in date_range],
+                y=bypass_data,
+                name='바이패스',
+                marker_color='#3b82f6',
+                opacity=0.8
+            ))
+            
+            fig.update_layout(
+                title=f"기간별 알림 처리 결과 ({start_date.strftime('%m/%d')} ~ {end_date.strftime('%m/%d')})",
+                xaxis_title="날짜",
+                yaxis_title="처리 건수",
+                height=400,
+                plot_bgcolor='white',
+                paper_bgcolor='white',
+                barmode='group',
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="right",
+                    x=1
+                )
+            )
+            # y축을 정수로 표시
+            fig.update_yaxes(tickmode='linear', dtick=1)
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # 처리 결과 요약 통계
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                total_interlock = sum(interlock_data)
+                st.metric("총 인터락 건수", f"{total_interlock}건")
+            with col2:
+                total_bypass = sum(bypass_data)
+                st.metric("총 바이패스 건수", f"{total_bypass}건")
+            with col3:
+                total_processed = total_interlock + total_bypass
+                st.metric("총 처리 완료 건수", f"{total_processed}건")
+            with col4:
+                if total_processed > 0:
+                    interlock_ratio = (total_interlock / total_processed) * 100
+                    st.metric("인터락 비율", f"{interlock_ratio:.1f}%")
+                else:
+                    st.metric("인터락 비율", "0%")
+        else:
+            st.info("선택된 기간에 처리 완료된 알림이 없습니다.")
         
         # 다운로드 버튼
         st.markdown("### 💾 데이터 내보내기")
-        col1, col2 = st.columns(2)
+        # 세로 구분선이 있는 2개 컬럼
+        col1, col2, col3 = st.columns([1, 0.05, 1])
         
         with col1:
             st.download_button("알림 이력 다운로드 (CSV)", adf.to_csv(index=False), 
                              file_name="alerts.csv", mime="text/csv", key="alert_csv_btn")
         
+        # 세로 구분선
         with col2:
-            st.button("엑셀 다운로드(확장)", disabled=True, key="alert_excel_btn")
+            st.markdown('<div style="border-left: 2px solid #e2e8f0; height: 100px; margin: 0 auto;"></div>', unsafe_allow_html=True)
+        
+        with col3:
+            st.write("")  # 빈 공간
 
     with tabs[3]:  # 리포트
         st.markdown('<div class="main-header no-translate" translate="no">📈 리포트 & 분석</div>', unsafe_allow_html=True)
+        
+        # ======================
+        # 기간 선택 (맨 위로 이동)
+        # ======================
+        st.markdown("### 📅 기간 선택")
+        
+        # 사이드바 날짜 설정 가져오기
+        sidebar_date_mode = st.session_state.get('sidebar_date_mode', '일자별')
+        sidebar_date = st.session_state.get('sidebar_selected_date_stored', datetime.now().date())
+        sidebar_date_range = st.session_state.get('sidebar_date_range_stored', (datetime.now().date() - timedelta(days=7), datetime.now().date()))
+        
+        col1, col2, col3 = st.columns([1, 2, 2])
+        with col1:
+            # 사이드바 설정과 동일하게 설정
+            date_mode = st.radio(
+                "📅 조회 모드", 
+                ["일자별", "기간별"], 
+                index=0 if sidebar_date_mode == "일자별" else 1, 
+                key="report_date_mode",
+                horizontal=True,
+                label_visibility="collapsed"
+            )
+        with col2:
+            if date_mode == "일자별":
+                selected_date = st.date_input("조회 일자", value=sidebar_date, key="report_selected_date")
+            else:  # 기간별
+                start_date = st.date_input("시작일", value=sidebar_date_range[0], key="report_start_date")
+        with col3:
+            if date_mode == "기간별":
+                end_date = st.date_input("종료일", value=sidebar_date_range[1], key="report_end_date")
+            else:
+                st.write("")  # 빈 공간
         
         # API 토글 상태에 따라 데이터 가져오기
         if use_real_api:
@@ -3802,15 +5877,23 @@ def main():
             col1, col2, col3, col4 = st.columns(4)
             
             with col1:
-                report_range = st.selectbox(
-                    "📅 기간 선택",
-                    ["최근 7일", "최근 30일", "최근 90일", "올해", "전체", "사용자 정의"],
-                    help="리포트에 포함할 데이터 기간을 선택하세요"
-                )
+                # 사이드바 날짜 설정을 기반으로 리포트 기간 자동 설정
+                sidebar_date_mode = st.session_state.get('sidebar_date_mode', '일자별')
+                sidebar_date = st.session_state.get('sidebar_selected_date_stored', datetime.now().date())
+                sidebar_date_range = st.session_state.get('sidebar_date_range_stored', (datetime.now().date() - timedelta(days=7), datetime.now().date()))
                 
-                if report_range == "사용자 정의":
-                    custom_start = st.date_input("시작일", datetime.now().date() - timedelta(days=7))
-                    custom_end = st.date_input("종료일", datetime.now().date())
+                if sidebar_date_mode == "일자별":
+                    report_range = st.selectbox(
+                        "📅 기간 선택",
+                        ["선택된 일자", "최근 7일", "최근 30일", "최근 90일", "올해", "전체"],
+                        help="리포트에 포함할 데이터 기간을 선택하세요 (사이드바 일자와 연동)"
+                    )
+                else:  # 기간별
+                    report_range = st.selectbox(
+                        "📅 기간 선택",
+                        ["선택된 기간", "최근 7일", "최근 30일", "최근 90일", "올해", "전체"],
+                        help="리포트에 포함할 데이터 기간을 선택하세요 (사이드바 기간과 연동)"
+                    )
             
             with col2:
                 report_type = st.selectbox(
@@ -3822,24 +5905,54 @@ def main():
             with col3:
                 report_format = st.selectbox(
                     "📄 출력 형식",
-                    ["웹 리포트", "PDF", "Excel", "CSV", "PowerPoint"],
+                    ["PDF", "CSV", "텍스트"],
                     help="리포트 출력 형식을 선택하세요"
                 )
             
             with col4:
                 st.markdown("<br>", unsafe_allow_html=True)
                 generate_btn = st.button(
-                    "🚀 리포트 생성",
+                    "리포트 생성",
                     type="primary",
                     use_container_width=True,
-                    help="선택한 설정으로 리포트를 생성합니다"
+                    help="선택한 설정으로 리포트를 생성하고 다운로드합니다"
                 )
         
-        # 리포트 생성 상태 표시
+        # 리포트 생성 및 다운로드
         if generate_btn:
             with st.spinner("리포트를 생성하고 있습니다..."):
-                time.sleep(2)  # 시뮬레이션
-                st.success("✅ 리포트가 성공적으로 생성되었습니다!")
+                time.sleep(1)  # 시뮬레이션
+                
+                # 선택된 형식에 따라 직접 다운로드
+                if report_format == "CSV":
+                    csv_data = generate_csv_report(use_real_api, report_type)
+                    st.download_button(
+                        label="📄 CSV 다운로드",
+                        data=csv_data,
+                        file_name=f"POSCO_IoT_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                        mime="text/csv",
+                        use_container_width=True
+                    )
+                elif report_format == "PDF":
+                    pdf_buffer = generate_pdf_report(use_real_api, report_type)
+                    st.download_button(
+                        label="📄 PDF 다운로드",
+                        data=pdf_buffer.getvalue(),
+                        file_name=f"POSCO_IoT_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                        mime="application/pdf",
+                        use_container_width=True
+                    )
+                else:  # 텍스트
+                    report_content = generate_comprehensive_report(use_real_api, report_type, report_range)
+                    st.download_button(
+                        label="📄 텍스트 다운로드",
+                        data=report_content,
+                        file_name=f"POSCO_IoT_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
+                        mime="text/plain",
+                        use_container_width=True
+                    )
+                
+                st.success("✅ 리포트가 성공적으로 생성되었습니다! 위의 다운로드 버튼을 클릭하여 파일을 저장하세요.")
                 
                 # 생성된 리포트 정보 표시
                 col1, col2, col3 = st.columns(3)
@@ -3849,6 +5962,44 @@ def main():
                     st.metric("📅 기간", report_range)
                 with col3:
                     st.metric("📄 형식", report_format)
+                
+                # 추가 다운로드 옵션
+                st.markdown("### 💾 추가 다운로드 옵션")
+                download_col1, download_col2, download_col3 = st.columns(3)
+                
+                with download_col1:
+                    # 다른 형식으로 다운로드
+                    if report_format != "CSV":
+                        csv_data = generate_csv_report(use_real_api, report_type)
+                        st.download_button(
+                            label="📊 CSV 형식",
+                            data=csv_data,
+                            file_name=f"POSCO_IoT_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                            mime="text/csv",
+                            use_container_width=True
+                        )
+                
+                with download_col2:
+                    if report_format != "PDF":
+                        pdf_buffer = generate_pdf_report(use_real_api, report_type)
+                        st.download_button(
+                            label="📋 PDF 형식",
+                            data=pdf_buffer.getvalue(),
+                            file_name=f"POSCO_IoT_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                            mime="application/pdf",
+                            use_container_width=True
+                        )
+                
+                with download_col3:
+                    # 알림 데이터만 별도 다운로드
+                    alerts_csv = download_alerts_csv()
+                    st.download_button(
+                        label="🚨 알림 데이터",
+                        data=alerts_csv,
+                        file_name=f"POSCO_Alerts_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                        mime="text/csv",
+                        use_container_width=True
+                    )
         
         # KPI 대시보드
         st.markdown("### 📊 실시간 KPI 대시보드")
@@ -3987,7 +6138,7 @@ def main():
             
             with col3:
                 st.markdown("**🎯 목표 대비**")
-                target_production = 1000  # 목표 생산량
+                target_production = 1000  # 기본 목표 생산량
                 current_avg = quality_data['production_volume'].mean()
                 achievement_rate = (current_avg / target_production) * 100
                 st.metric(
@@ -3998,6 +6149,20 @@ def main():
             
             # 생산량 트렌드 차트
             st.markdown("**📈 생산량 트렌드 분석**")
+            
+            # 기간 설정 및 목표 생산량 설정 (사이드바와 연동)
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                # 사이드바 날짜 범위에서 시작일 가져오기
+                sidebar_start = st.session_state.get('sidebar_date_range_stored', (datetime.now().date() - timedelta(days=7), datetime.now().date()))[0]
+                trend_start_date = st.date_input("분석 시작일", value=sidebar_start, key="trend_start_date")
+            with col2:
+                # 사이드바 날짜 범위에서 종료일 가져오기
+                sidebar_end = st.session_state.get('sidebar_date_range_stored', (datetime.now().date() - timedelta(days=7), datetime.now().date()))[1]
+                trend_end_date = st.date_input("분석 종료일", value=sidebar_end, key="trend_end_date")
+            with col3:
+                custom_target = st.number_input("목표 생산량 (개/일)", min_value=100, max_value=10000, value=1300, step=50, key="custom_target_production")
+            
             col1, col2 = st.columns([2, 1])
             
             with col1:
@@ -4013,8 +6178,9 @@ def main():
                 ))
                 
                 # 목표선 추가
+                target_for_hline = custom_target if 'custom_target' in locals() else 1300
                 fig.add_hline(
-                    y=target_production, 
+                    y=target_for_hline, 
                     line_dash="dash", 
                     line_color="red",
                     annotation_text="목표 생산량",
@@ -4023,7 +6189,7 @@ def main():
                 
                 # 평균선 추가
                 fig.add_hline(
-                    y=current_avg, 
+                    y=quality_data['production_volume'].mean(), 
                     line_dash="dot", 
                     line_color="green",
                     annotation_text="평균 생산량",
@@ -4043,25 +6209,75 @@ def main():
                 st.plotly_chart(fig, use_container_width=True)
             
             with col2:
-                st.markdown("**📊 생산성 통계**")
+                st.markdown("**📊 생산성 분석**")
                 
-                # 생산량 분포 히스토그램
-                fig_hist = go.Figure()
-                fig_hist.add_trace(go.Histogram(
+                # 생산성 vs 품질률 산점도
+                fig_scatter = go.Figure()
+                fig_scatter.add_trace(go.Scatter(
                     x=quality_data['production_volume'],
-                    nbinsx=10,
-                    marker_color='#3b82f6',
-                    opacity=0.7
+                    y=quality_data['quality_rate'],
+                    mode='markers',
+                    marker=dict(
+                        size=12,
+                        color=quality_data['defect_rate'],
+                        colorscale='RdYlGn_r',
+                        showscale=True,
+                        colorbar=dict(title="불량률 (%)")
+                    ),
+                    text=quality_data['day'],
+                    hovertemplate='<b>%{text}</b><br>' +
+                                '생산량: %{x}개<br>' +
+                                '품질률: %{y:.2f}%<br>' +
+                                '불량률: %{marker.color:.3f}%<extra></extra>'
                 ))
-                fig_hist.update_layout(
-                    title="생산량 분포",
-                    xaxis_title="생산량",
-                    yaxis_title="빈도",
+                
+                # 목표 생산량 수직선
+                target_for_vline = custom_target if 'custom_target' in locals() else 1300
+                fig_scatter.add_vline(
+                    x=target_for_vline, 
+                    line_dash="dash", 
+                    line_color="red",
+                    annotation_text="목표 생산량",
+                    annotation_position="top right"
+                )
+                
+                # 목표 품질률 수평선
+                fig_scatter.add_hline(
+                    y=99.5, 
+                    line_dash="dash", 
+                    line_color="orange",
+                    annotation_text="목표 품질률 (99.5%)",
+                    annotation_position="bottom right"
+                )
+                
+                fig_scatter.update_layout(
+                    title="생산량 vs 품질률 분석",
+                    xaxis_title="생산량 (개)",
+                    yaxis_title="품질률 (%)",
                     height=300,
                     plot_bgcolor='white',
-                    paper_bgcolor='white'
+                    paper_bgcolor='white',
+                    showlegend=False
                 )
-                st.plotly_chart(fig_hist, use_container_width=True)
+                st.plotly_chart(fig_scatter, use_container_width=True)
+            
+            # 생산성 지표를 트렌드 차트 아래에 가로로 배치
+            st.markdown("**📈 생산성 지표**")
+            avg_production = quality_data['production_volume'].mean()
+            avg_quality = quality_data['quality_rate'].mean()
+            # custom_target이 정의된 경우에만 사용, 아니면 기본값 1300 사용
+            target_for_calc = custom_target if 'custom_target' in locals() else 1300
+            productivity_score = (avg_production / target_for_calc) * (avg_quality / 100) * 100
+            
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("평균 생산량", f"{avg_production:.0f}개")
+            with col2:
+                st.metric("평균 품질률", f"{avg_quality:.1f}%")
+            with col3:
+                st.metric("목표 대비", f"{(avg_production/target_for_calc)*100:.1f}%")
+            with col4:
+                st.metric("생산성 점수", f"{productivity_score:.1f}점")
             
             # 생산성 상세 데이터 테이블
             st.markdown("**📋 생산성 상세 데이터**")
@@ -4087,7 +6303,7 @@ def main():
                 else:
                     return 'background-color: #fef3c7'  # 연한 노랑
             
-            styled_df = detail_df.style.applymap(color_production_index, subset=['생산성 지수'])
+            styled_df = detail_df.style.map(color_production_index, subset=['생산성 지수'])
             st.dataframe(styled_df, use_container_width=True, height=300)
             
             # 생산성 개선 제안
@@ -4137,6 +6353,196 @@ def main():
                     f"{quality_improvement:.2f}%",
                     f"{quality_improvement:.2f}%" if quality_improvement != 0 else "0%"
                 )
+            
+            # PPM 분석 섹션 추가
+            st.markdown("### 📊 PPM (Parts Per Million) 분석")
+            
+            # PPM 개요
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                avg_ppm = quality_data['PPM'].mean()
+                st.metric(
+                    "평균 PPM", 
+                    f"{avg_ppm:.0f}",
+                    f"{quality_data['PPM'].std():.0f}"
+                )
+            
+            with col2:
+                min_ppm = quality_data['PPM'].min()
+                st.metric(
+                    "최저 PPM", 
+                    f"{min_ppm:.0f}"
+                )
+            
+            with col3:
+                max_ppm = quality_data['PPM'].max()
+                st.metric(
+                    "최고 PPM", 
+                    f"{max_ppm:.0f}"
+                )
+            
+            with col4:
+                # PPM 목표 (일반적으로 1000 PPM 이하가 우수)
+                target_ppm = 1000
+                ppm_achievement = (target_ppm - avg_ppm) / target_ppm * 100
+                st.metric(
+                    "목표 달성률", 
+                    f"{ppm_achievement:.1f}%",
+                    f"{target_ppm - avg_ppm:.0f} PPM"
+                )
+            
+            # PPM 트렌드 차트
+            st.markdown("**📈 PPM 트렌드 분석**")
+            
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                fig_ppm = go.Figure()
+                
+                # PPM 라인 차트
+                fig_ppm.add_trace(go.Scatter(
+                    x=quality_data['day'],
+                    y=quality_data['PPM'],
+                    mode='lines+markers',
+                    name='실제 PPM',
+                    line=dict(color='#ef4444', width=3),
+                    marker=dict(size=8)
+                ))
+                
+                # 목표 PPM 수평선
+                fig_ppm.add_hline(
+                    y=target_ppm, 
+                    line_dash="dash", 
+                    line_color="red",
+                    annotation_text="목표 PPM (1000)",
+                    annotation_position="top right"
+                )
+                
+                # 우수 PPM 수평선 (500 PPM)
+                fig_ppm.add_hline(
+                    y=500, 
+                    line_dash="dash", 
+                    line_color="green",
+                    annotation_text="우수 PPM (500)",
+                    annotation_position="bottom right"
+                )
+                
+                fig_ppm.update_layout(
+                    title="PPM 트렌드 분석",
+                    xaxis_title="요일",
+                    yaxis_title="PPM",
+                    height=400,
+                    plot_bgcolor='white',
+                    paper_bgcolor='white',
+                    showlegend=True
+                )
+                st.plotly_chart(fig_ppm, use_container_width=True)
+            
+            with col2:
+                # PPM 분포 히스토그램
+                fig_ppm_hist = go.Figure()
+                
+                fig_ppm_hist.add_trace(go.Histogram(
+                    x=quality_data['PPM'],
+                    nbinsx=10,
+                    name='PPM 분포',
+                    marker_color='#3b82f6',
+                    opacity=0.7
+                ))
+                
+                fig_ppm_hist.update_layout(
+                    title="PPM 분포",
+                    xaxis_title="PPM",
+                    yaxis_title="빈도",
+                    height=400,
+                    plot_bgcolor='white',
+                    paper_bgcolor='white',
+                    showlegend=False
+                )
+                st.plotly_chart(fig_ppm_hist, use_container_width=True)
+            
+            # PPM vs 품질률 상관관계 분석
+            st.markdown("**📊 PPM vs 품질률 상관관계**")
+            
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                fig_ppm_corr = go.Figure()
+                
+                fig_ppm_corr.add_trace(go.Scatter(
+                    x=quality_data['PPM'],
+                    y=quality_data['quality_rate'],
+                    mode='markers',
+                    name='PPM vs 품질률',
+                    marker=dict(
+                        size=10,
+                        color=quality_data['PPM'],
+                        colorscale='RdYlGn_r',
+                        showscale=True,
+                        colorbar=dict(title="PPM")
+                    )
+                ))
+                
+                # 상관계수 계산
+                correlation = quality_data['PPM'].corr(quality_data['quality_rate'])
+                
+                fig_ppm_corr.update_layout(
+                    title=f"PPM vs 품질률 상관관계 (r = {correlation:.3f})",
+                    xaxis_title="PPM",
+                    yaxis_title="품질률 (%)",
+                    height=400,
+                    plot_bgcolor='white',
+                    paper_bgcolor='white',
+                    showlegend=False
+                )
+                st.plotly_chart(fig_ppm_corr, use_container_width=True)
+            
+            with col2:
+                # PPM 등급별 분류
+                st.markdown("**📊 PPM 등급별 분류**")
+                
+                ppm_grades = []
+                for ppm in quality_data['PPM']:
+                    if ppm <= 500:
+                        ppm_grades.append("우수")
+                    elif ppm <= 1000:
+                        ppm_grades.append("양호")
+                    elif ppm <= 5000:
+                        ppm_grades.append("보통")
+                    else:
+                        ppm_grades.append("불량")
+                
+                grade_counts = pd.Series(ppm_grades).value_counts()
+                
+                fig_ppm_grade = go.Figure(data=[go.Pie(
+                    labels=grade_counts.index,
+                    values=grade_counts.values,
+                    hole=0.4
+                )])
+                
+                fig_ppm_grade.update_layout(
+                    title="PPM 등급별 분포",
+                    height=400,
+                    plot_bgcolor='white',
+                    paper_bgcolor='white'
+                )
+                st.plotly_chart(fig_ppm_grade, use_container_width=True)
+            
+            # PPM 개선 제안
+            st.markdown("**💡 PPM 개선 제안**")
+            
+            if avg_ppm <= 500:
+                st.success("✅ PPM이 500 이하로 우수한 수준입니다. 지속적인 모니터링을 유지하세요.")
+            elif avg_ppm <= 1000:
+                st.info("ℹ️ PPM이 500-1000 범위에 있습니다. 추가 개선을 통해 우수 수준으로 향상시킬 수 있습니다.")
+                st.info("🔧 제안사항: 공정 최적화, 품질 관리 강화, 설비 점검 주기 단축")
+            elif avg_ppm <= 5000:
+                st.warning("⚠️ PPM이 1000-5000 범위에 있습니다. 품질 개선이 필요합니다.")
+                st.info("🔧 제안사항: 공정 분석 및 개선, 품질 관리 시스템 강화, 작업자 교육")
+            else:
+                st.error("❌ PPM이 5000을 초과합니다. 즉각적인 품질 개선 조치가 필요합니다.")
+                st.info("🔧 긴급 제안사항: 공정 전면 검토, 품질 관리 시스템 재구축, 설비 대체 검토")
             
             # 품질 트렌드 분석
             st.markdown("**📈 품질 트렌드 분석**")
@@ -4258,7 +6664,7 @@ def main():
                 else:
                     return 'background-color: #fee2e2; color: #991b1b'  # 빨강
             
-            styled_quality_df = quality_detail_df.style.applymap(color_quality_grade, subset=['품질 등급'])
+            styled_quality_df = quality_detail_df.style.map(color_quality_grade, subset=['품질 등급'])
             st.dataframe(styled_quality_df, use_container_width=True, height=300)
             
             # 품질 개선 제안
@@ -4447,7 +6853,7 @@ def main():
                 else:
                     return 'background-color: #d1fae5; color: #065f46'
             
-            styled_equipment_df = display_df.style.applymap(color_performance_grade, subset=['성능 등급']).applymap(color_maintenance_need, subset=['정비 필요성'])
+            styled_equipment_df = display_df.style.map(color_performance_grade, subset=['성능 등급']).map(color_maintenance_need, subset=['정비 필요성'])
             st.dataframe(styled_equipment_df, use_container_width=True, height=400)
             
             # 설비 관리 제안
@@ -4546,12 +6952,38 @@ def main():
                 if len(alert_df) > 0:
                     equipment_counts = alert_df['equipment'].value_counts().head(8)
                     
+                    # 설비별 알림 건수와 설비 상태 정보 결합
+                    equipment_df = pd.DataFrame(equipment_data)
+                    equipment_status_dict = dict(zip(equipment_df['name'], equipment_df['status']))
+                    
+                    # 설비별 알림 건수에 상태 정보 추가
+                    equipment_data_for_chart = []
+                    for equipment, count in equipment_counts.items():
+                        status = equipment_status_dict.get(equipment, '알 수 없음')
+                        equipment_data_for_chart.append({
+                            'equipment': equipment,
+                            'count': count,
+                            'status': status
+                        })
+                    
+                    # 상태별 색상 매핑
+                    color_map = {
+                        '정상': '#10b981',
+                        '점검중': '#f59e0b',
+                        '고장': '#ef4444',
+                        '알 수 없음': '#6b7280'
+                    }
+                    
+                    colors = [color_map.get(data['status'], '#6b7280') for data in equipment_data_for_chart]
+                    
                     fig_bar = go.Figure(data=[go.Bar(
-                        x=equipment_counts.values,
-                        y=equipment_counts.index,
+                        x=[data['count'] for data in equipment_data_for_chart],
+                        y=[data['equipment'] for data in equipment_data_for_chart],
                         orientation='h',
-                        marker_color='#ef4444',
-                        opacity=0.8
+                        marker_color=colors,
+                        opacity=0.8,
+                        text=[f"{data['count']}건 ({data['status']})" for data in equipment_data_for_chart],
+                        textposition='auto'
                     )])
                     fig_bar.update_layout(
                         title="설비별 알림 발생 건수 (상위 8개)",
@@ -4561,6 +6993,8 @@ def main():
                         plot_bgcolor='white',
                         paper_bgcolor='white'
                     )
+                    # x축을 정수로 표시 (1, 2, 3, 4...)
+                    fig_bar.update_xaxes(tickmode='linear', dtick=1, range=[0, max(equipment_counts.values) + 1])
                     st.plotly_chart(fig_bar, use_container_width=True)
                 else:
                     st.info("📊 알림 데이터가 없습니다.")
@@ -4655,7 +7089,7 @@ def main():
                     else:
                         return 'background-color: #fee2e2; color: #991b1b'
                 
-                styled_alert_df = display_alert_df.style.applymap(color_severity, subset=['심각도']).applymap(color_status, subset=['상태'])
+                styled_alert_df = display_alert_df.style.map(color_severity, subset=['심각도']).map(color_status, subset=['상태'])
                 st.dataframe(styled_alert_df, use_container_width=True, height=300)
                 
                 # 알림 관리 제안
@@ -4820,7 +7254,7 @@ def main():
                 else:
                     return 'background-color: #f3f4f6; color: #374151'
             
-            styled_cost_df = cost_df.style.applymap(color_status, subset=['상태'])
+            styled_cost_df = cost_df.style.map(color_status, subset=['상태'])
             st.dataframe(styled_cost_df, use_container_width=True, height=300)
             
             # 비용 관리 제안
@@ -4838,59 +7272,7 @@ def main():
             else:
                 st.success("✅ 비용 효율성이 양호합니다. 지속적인 모니터링을 유지하세요.")
         
-        # 리포트 다운로드 및 공유
-        st.markdown("### 💾 리포트 다운로드 및 공유")
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            export_format = st.selectbox("내보내기 형식", ["PDF", "Excel", "CSV", "PowerPoint"], key="report_export_format")
-            if st.button("📄 리포트 다운로드", key="download_report", type="primary"):
-                with st.spinner("리포트를 생성하고 있습니다..."):
-                    time.sleep(1)
-                    st.success(f"✅ {export_format} 형식으로 리포트가 다운로드되었습니다.")
-        
-        with col2:
-            email_address = st.text_input("이메일 주소", placeholder="example@posco.com", key="report_email")
-            if st.button("📧 이메일 전송", key="email_report"):
-                if email_address:
-                    with st.spinner("이메일을 전송하고 있습니다..."):
-                        time.sleep(1)
-                        st.success(f"✅ 리포트가 {email_address}로 전송되었습니다.")
-                else:
-                    st.error("❌ 이메일 주소를 입력해주세요.")
-        
-        with col3:
-            schedule_report = st.checkbox("정기 리포트 예약", key="schedule_report")
-            if schedule_report:
-                schedule_frequency = st.selectbox("전송 주기", ["매일", "매주", "매월"], key="report_frequency")
-                if st.button("📅 예약 설정", key="set_schedule"):
-                    st.success(f"✅ {schedule_frequency} 정기 리포트가 예약되었습니다.")
-        
-        # 리포트 히스토리
-        st.markdown("### 📚 리포트 히스토리")
-        
-        # 더 상세한 리포트 히스토리
-        report_history = [
-            {"날짜": "2024-01-15", "리포트명": "일일 생산성 리포트", "생성자": "시스템", "상태": "완료", "다운로드": "15회"},
-            {"날짜": "2024-01-14", "리포트명": "주간 품질 리포트", "생성자": "관리자", "상태": "완료", "다운로드": "8회"},
-            {"날짜": "2024-01-13", "리포트명": "설비 상태 리포트", "생성자": "시스템", "상태": "완료", "다운로드": "12회"},
-            {"날짜": "2024-01-12", "리포트명": "월간 종합 리포트", "생성자": "관리자", "상태": "완료", "다운로드": "25회"},
-            {"날짜": "2024-01-11", "리포트명": "비용 분석 리포트", "생성자": "시스템", "상태": "완료", "다운로드": "6회"}
-        ]
-        
-        history_df = pd.DataFrame(report_history)
-        
-        # 상태에 따른 색상 스타일링
-        def color_status(val):
-            if val == "완료":
-                return 'background-color: #d1fae5; color: #065f46'
-            elif val == "진행중":
-                return 'background-color: #fef3c7; color: #92400e'
-            else:
-                return 'background-color: #fee2e2; color: #991b1b'
-        
-        styled_history_df = history_df.style.applymap(color_status, subset=['상태'])
-        st.dataframe(styled_history_df, use_container_width=True, height=200)
+
 
     with tabs[5]:  # 설정
         st.markdown('<div class="main-header no-translate" translate="no">⚙️ 설정</div>', unsafe_allow_html=True)
@@ -4924,8 +7306,12 @@ def main():
                 high_contrast = st.checkbox("고대비 모드", value=False, key="high_contrast")
                 large_font = st.checkbox("큰 글씨 모드", value=False, key="large_font")
             
-            if st.button("일반 설정 저장", key="save_general_settings"):
-                st.success("일반 설정이 저장되었습니다.")
+            # 일반 설정 저장 버튼을 중앙에 독립적으로 배치
+            st.markdown("<br>", unsafe_allow_html=True)
+            col1, col2, col3 = st.columns([1, 1, 1])
+            with col2:
+                if st.button("일반 설정 저장", key="save_general_settings", use_container_width=True):
+                    st.success("일반 설정이 저장되었습니다.")
         
         with settings_tab2:
             st.markdown("### 🔔 알림 설정")
@@ -4958,8 +7344,12 @@ def main():
                 st.markdown("**알림 소리**")
                 notification_sound = st.selectbox("알림음", ["기본", "부드러운", "경고음", "무음"], index=0, key="notification_sound")
             
-            if st.button("알림 설정 저장", key="save_alert_settings"):
-                st.success("알림 설정이 저장되었습니다.")
+            # 알림 설정 저장 버튼을 중앙에 독립적으로 배치
+            st.markdown("<br>", unsafe_allow_html=True)
+            col1, col2, col3 = st.columns([1, 1, 1])
+            with col2:
+                if st.button("알림 설정 저장", key="save_alert_settings", use_container_width=True):
+                    st.success("알림 설정이 저장되었습니다.")
         
         with settings_tab3:
             st.markdown("### 📊 데이터 설정")
@@ -5000,8 +7390,12 @@ def main():
                         except Exception as e:
                             st.error(f"API 서버 연결 실패: {e}")
             
-            if st.button("데이터 설정 저장", key="save_data_settings"):
-                st.success("데이터 설정이 저장되었습니다.")
+            # 데이터 설정 저장 버튼을 중앙에 독립적으로 배치
+            st.markdown("<br>", unsafe_allow_html=True)
+            col1, col2, col3 = st.columns([1, 1, 1])
+            with col2:
+                if st.button("데이터 설정 저장", key="save_data_settings", use_container_width=True):
+                    st.success("데이터 설정이 저장되었습니다.")
         
         with settings_tab4:
             st.markdown("### 👤 사용자 관리")
@@ -5072,7 +7466,7 @@ def main():
                                             "주담당자": "예" if eq.get('is_primary', False) else "아니오"
                                         })
                                     
-                                    equipment_df = pd.DataFrame(equipment_data)
+                                    equipment_df = pd.DataFrame(equipment_list)
                                     st.dataframe(equipment_df, use_container_width=True, height=150)
                                 else:
                                     st.info("담당 설비가 없습니다.")
