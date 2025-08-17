@@ -1,0 +1,482 @@
+[
+  {
+    "equipment": "압연기_5호기",
+    "sensor_type": "전압",
+    "value": 81.21,
+    "threshold": 67.7,
+    "severity": "높음",
+    "timestamp": "2024-07-28 06:27:00",
+    "message": "압연기_5호기 전압 높은 수준 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_20호기",
+    "sensor_type": "위치",
+    "value": 62.71,
+    "threshold": 45.77,
+    "severity": "낮음",
+    "timestamp": "2024-07-28 16:00:00",
+    "message": "압연기_20호기 위치 경미한 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_10호기",
+    "sensor_type": "속도",
+    "value": 86.8,
+    "threshold": 75.17,
+    "severity": "긴급",
+    "timestamp": "2024-07-28 10:16:00",
+    "message": "압연기_10호기 속도 긴급 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_40호기",
+    "sensor_type": "온도",
+    "value": 70.04,
+    "threshold": 67.94,
+    "severity": "높음",
+    "timestamp": "2024-07-28 03:38:00",
+    "message": "압연기_40호기 온도 높은 수준 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_16호기",
+    "sensor_type": "속도",
+    "value": 81.7,
+    "threshold": 68.15,
+    "severity": "높음",
+    "timestamp": "2024-07-28 15:57:00",
+    "message": "압연기_16호기 속도 높은 수준 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_38호기",
+    "sensor_type": "압력",
+    "value": 72.37,
+    "threshold": 74.9,
+    "severity": "높음",
+    "timestamp": "2024-07-28 19:59:00",
+    "message": "압연기_38호기 압력 높은 수준 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_6호기",
+    "sensor_type": "전압",
+    "value": 60.22,
+    "threshold": 62.77,
+    "severity": "보통",
+    "timestamp": "2024-07-29 22:15:00",
+    "message": "압연기_6호기 전압 주의 수준 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_37호기",
+    "sensor_type": "전압",
+    "value": 81.09,
+    "threshold": 70.33,
+    "severity": "긴급",
+    "timestamp": "2024-07-29 18:14:00",
+    "message": "압연기_37호기 전압 긴급 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_4호기",
+    "sensor_type": "속도",
+    "value": 68.12,
+    "threshold": 58.21,
+    "severity": "보통",
+    "timestamp": "2024-07-29 12:31:00",
+    "message": "압연기_4호기 속도 주의 수준 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_40호기",
+    "sensor_type": "속도",
+    "value": 77.16,
+    "threshold": 64.31,
+    "severity": "높음",
+    "timestamp": "2024-07-29 22:28:00",
+    "message": "압연기_40호기 속도 높은 수준 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_38호기",
+    "sensor_type": "압력",
+    "value": 66.65,
+    "threshold": 57.95,
+    "severity": "보통",
+    "timestamp": "2024-07-29 09:28:00",
+    "message": "압연기_38호기 압력 주의 수준 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_1호기",
+    "sensor_type": "전류",
+    "value": 62.61,
+    "threshold": 52.06,
+    "severity": "낮음",
+    "timestamp": "2024-07-30 12:09:00",
+    "message": "압연기_1호기 전류 경미한 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_46호기",
+    "sensor_type": "전류",
+    "value": 83.67,
+    "threshold": 77.57,
+    "severity": "긴급",
+    "timestamp": "2024-07-30 19:40:00",
+    "message": "압연기_46호기 전류 긴급 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_21호기",
+    "sensor_type": "전압",
+    "value": 65.55,
+    "threshold": 58.39,
+    "severity": "보통",
+    "timestamp": "2024-07-30 13:25:00",
+    "message": "압연기_21호기 전압 주의 수준 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_18호기",
+    "sensor_type": "압력",
+    "value": 58.95,
+    "threshold": 53.01,
+    "severity": "낮음",
+    "timestamp": "2024-07-30 21:19:00",
+    "message": "압연기_18호기 압력 경미한 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_10호기",
+    "sensor_type": "압력",
+    "value": 61.6,
+    "threshold": 50.48,
+    "severity": "보통",
+    "timestamp": "2024-07-30 16:48:00",
+    "message": "압연기_10호기 압력 주의 수준 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_26호기",
+    "sensor_type": "압력",
+    "value": 50.14,
+    "threshold": 50.22,
+    "severity": "낮음",
+    "timestamp": "2024-07-30 05:47:00",
+    "message": "압연기_26호기 압력 경미한 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_3호기",
+    "sensor_type": "온도",
+    "value": 62.83,
+    "threshold": 62.41,
+    "severity": "보통",
+    "timestamp": "2024-07-30 12:35:00",
+    "message": "압연기_3호기 온도 주의 수준 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_13호기",
+    "sensor_type": "압력",
+    "value": 85.75,
+    "threshold": 72.55,
+    "severity": "긴급",
+    "timestamp": "2024-07-31 14:36:00",
+    "message": "압연기_13호기 압력 긴급 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_36호기",
+    "sensor_type": "진동",
+    "value": 83.24,
+    "threshold": 68.14,
+    "severity": "높음",
+    "timestamp": "2024-07-31 10:56:00",
+    "message": "압연기_36호기 진동 높은 수준 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_46호기",
+    "sensor_type": "유량",
+    "value": 63.14,
+    "threshold": 52.15,
+    "severity": "낮음",
+    "timestamp": "2024-07-31 11:13:00",
+    "message": "압연기_46호기 유량 경미한 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_14호기",
+    "sensor_type": "속도",
+    "value": 70.42,
+    "threshold": 50.39,
+    "severity": "보통",
+    "timestamp": "2024-07-31 04:45:00",
+    "message": "압연기_14호기 속도 주의 수준 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_10호기",
+    "sensor_type": "전류",
+    "value": 81.46,
+    "threshold": 73.78,
+    "severity": "높음",
+    "timestamp": "2024-07-31 15:58:00",
+    "message": "압연기_10호기 전류 높은 수준 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_2호기",
+    "sensor_type": "압력",
+    "value": 87.47,
+    "threshold": 81.26,
+    "severity": "긴급",
+    "timestamp": "2024-08-01 16:57:00",
+    "message": "압연기_2호기 압력 긴급 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_43호기",
+    "sensor_type": "전압",
+    "value": 77.32,
+    "threshold": 64.69,
+    "severity": "높음",
+    "timestamp": "2024-08-01 03:42:00",
+    "message": "압연기_43호기 전압 높은 수준 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_11호기",
+    "sensor_type": "전류",
+    "value": 81.1,
+    "threshold": 79.49,
+    "severity": "긴급",
+    "timestamp": "2024-08-01 01:54:00",
+    "message": "압연기_11호기 전류 긴급 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_31호기",
+    "sensor_type": "진동",
+    "value": 94.4,
+    "threshold": 75.35,
+    "severity": "긴급",
+    "timestamp": "2024-08-01 09:14:00",
+    "message": "압연기_31호기 진동 긴급 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_23호기",
+    "sensor_type": "전류",
+    "value": 77.62,
+    "threshold": 60.27,
+    "severity": "높음",
+    "timestamp": "2024-08-01 14:00:00",
+    "message": "압연기_23호기 전류 높은 수준 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_8호기",
+    "sensor_type": "압력",
+    "value": 64.51,
+    "threshold": 43.15,
+    "severity": "낮음",
+    "timestamp": "2024-08-01 01:53:00",
+    "message": "압연기_8호기 압력 경미한 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_47호기",
+    "sensor_type": "위치",
+    "value": 79.83,
+    "threshold": 62.56,
+    "severity": "높음",
+    "timestamp": "2024-08-01 16:50:00",
+    "message": "압연기_47호기 위치 높은 수준 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_25호기",
+    "sensor_type": "속도",
+    "value": 81.46,
+    "threshold": 69.43,
+    "severity": "높음",
+    "timestamp": "2024-08-02 20:17:00",
+    "message": "압연기_25호기 속도 높은 수준 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_26호기",
+    "sensor_type": "속도",
+    "value": 88.88,
+    "threshold": 78.62,
+    "severity": "긴급",
+    "timestamp": "2024-08-02 20:20:00",
+    "message": "압연기_26호기 속도 긴급 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_39호기",
+    "sensor_type": "위치",
+    "value": 75.81,
+    "threshold": 66.82,
+    "severity": "높음",
+    "timestamp": "2024-08-02 00:51:00",
+    "message": "압연기_39호기 위치 높은 수준 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_46호기",
+    "sensor_type": "유량",
+    "value": 86.73,
+    "threshold": 81.75,
+    "severity": "긴급",
+    "timestamp": "2024-08-02 20:47:00",
+    "message": "압연기_46호기 유량 긴급 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_21호기",
+    "sensor_type": "유량",
+    "value": 70.79,
+    "threshold": 62.31,
+    "severity": "보통",
+    "timestamp": "2024-08-02 20:42:00",
+    "message": "압연기_21호기 유량 주의 수준 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_37호기",
+    "sensor_type": "전류",
+    "value": 71.59,
+    "threshold": 57.53,
+    "severity": "보통",
+    "timestamp": "2024-08-03 20:37:00",
+    "message": "압연기_37호기 전류 주의 수준 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_38호기",
+    "sensor_type": "온도",
+    "value": 57.26,
+    "threshold": 51.6,
+    "severity": "낮음",
+    "timestamp": "2024-08-03 21:55:00",
+    "message": "압연기_38호기 온도 경미한 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_32호기",
+    "sensor_type": "진동",
+    "value": 73.98,
+    "threshold": 62.83,
+    "severity": "보통",
+    "timestamp": "2024-08-03 20:16:00",
+    "message": "압연기_32호기 진동 주의 수준 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_44호기",
+    "sensor_type": "전압",
+    "value": 63.5,
+    "threshold": 61.33,
+    "severity": "보통",
+    "timestamp": "2024-08-03 02:05:00",
+    "message": "압연기_44호기 전압 주의 수준 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_34호기",
+    "sensor_type": "진동",
+    "value": 59.59,
+    "threshold": 46.2,
+    "severity": "낮음",
+    "timestamp": "2024-08-03 15:24:00",
+    "message": "압연기_34호기 진동 경미한 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_13호기",
+    "sensor_type": "진동",
+    "value": 55.26,
+    "threshold": 41.05,
+    "severity": "낮음",
+    "timestamp": "2024-08-03 12:23:00",
+    "message": "압연기_13호기 진동 경미한 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_42호기",
+    "sensor_type": "전류",
+    "value": 96.86,
+    "threshold": 73.61,
+    "severity": "긴급",
+    "timestamp": "2024-08-04 19:41:00",
+    "message": "압연기_42호기 전류 긴급 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_25호기",
+    "sensor_type": "온도",
+    "value": 84.48,
+    "threshold": 60.22,
+    "severity": "높음",
+    "timestamp": "2024-08-04 16:47:00",
+    "message": "압연기_25호기 온도 높은 수준 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_25호기",
+    "sensor_type": "속도",
+    "value": 81.51,
+    "threshold": 73.41,
+    "severity": "긴급",
+    "timestamp": "2024-08-04 05:06:00",
+    "message": "압연기_25호기 속도 긴급 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_49호기",
+    "sensor_type": "온도",
+    "value": 79.91,
+    "threshold": 64.97,
+    "severity": "높음",
+    "timestamp": "2024-08-04 19:39:00",
+    "message": "압연기_49호기 온도 높은 수준 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_44호기",
+    "sensor_type": "위치",
+    "value": 84.03,
+    "threshold": 75.24,
+    "severity": "긴급",
+    "timestamp": "2024-08-04 20:16:00",
+    "message": "압연기_44호기 위치 긴급 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_17호기",
+    "sensor_type": "진동",
+    "value": 73.19,
+    "threshold": 68.84,
+    "severity": "높음",
+    "timestamp": "2024-08-04 21:12:00",
+    "message": "압연기_17호기 진동 높은 수준 이상 감지",
+    "status": "미처리"
+  },
+  {
+    "equipment": "압연기_33호기",
+    "sensor_type": "압력",
+    "value": 99.71,
+    "threshold": 75.23,
+    "severity": "긴급",
+    "timestamp": "2024-08-04 16:50:00",
+    "message": "압연기_33호기 압력 긴급 이상 감지",
+    "status": "미처리"
+  }
+]

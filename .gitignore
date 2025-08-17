@@ -1,12 +1,22 @@
-data
-check
-new_dashboard.py
-# .gitignore에 추가
+# Secrets
+.env
+gen-lang-client-*.json
+
+# Runtime
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-api2_server.py
-new_api_server.py
+*.py[cod]
+*.log
+posco_iot.db
+*.sqlite3
+
+# Data
+data/*.csv
+!data/*_sample.csv
+ai_model/*/last_prediction.json
+
+# OS/IDE
+.DS_Store
+*.swp
+.vscode/
+.idea/
 

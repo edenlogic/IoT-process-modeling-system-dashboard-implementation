@@ -337,7 +337,7 @@ python coolsms_bot.py
 
 ## 📞 지원 및 문의
 
-- **개발팀**: 천안형 글로벌 인재 양성 중급반 7팀팀
+- **개발팀**: 천안형 글로벌 인재 양성 중급반 7팀
 - **팀장 이메일**: ziayo02@gmail.com
 - **프로젝트 관리**: https://github.com/edenlogic/IoT-process-modeling-system-dashboard-implementation.git
 
