@@ -1,9 +1,0 @@
-@echo off
-start cmd /k "%~dp0start_api.bat"
-timeout /t 5 >nul
-start cmd /k "%~dp0start_dashboard.bat"
-timeout /t 3 >nul
-cd /d %~dp0
-cd ..\app
-call .venv\Scripts\activate
-python src\realtime_simulator.py
