@@ -94,26 +94,45 @@ pip install -r requirements.txt
 
 ### 2. 환경변수 설정
 `.env` 파일을 생성하고 다음 내용을 설정:
+
 ```env
+# API Keys (필수)
+OPENAI_API_KEY=your_openai_api_key
+COOLSMS_API_KEY=your_coolsms_api_key
+COOLSMS_API_SECRET=your_coolsms_api_secret
+
 # CoolSMS 설정
-COOLSMS_API_KEY=your_api_key
-COOLSMS_API_SECRET=your_api_secret
 COOLSMS_SENDER=your_sender_number
+FASTAPI_BASE_URL=http://localhost:8000
+PUBLIC_BASE_URL=http://localhost:8501
 
-# 서버 설정
-PUBLIC_BASE_URL=http://localhost:8000
+# 관리자 설정
+ADMIN_PHONE_NUMBERS=admin_phone1,admin_phone2
 
-# 알림 쿨다운 설정 (초)
-ERROR_COOLDOWN_SECONDS=30
+# 알림 임계값 설정
+VALUE_CHANGE_THRESHOLD=0.1
+ERROR_COOLDOWN_SECONDS=300
 WARNING_COOLDOWN_SECONDS=60
-INFO_COOLDOWN_SECONDS=120
+INFO_COOLDOWN_SECONDS=30
 
-# Google Cloud AI 설정 (음성 인식용)
-GOOGLE_APPLICATION_CREDENTIALS=./gen-lang-client-0696719372-0f0c03eabd08.json
-GOOGLE_CLOUD_PROJECT=gen-lang-client-0696719372
+# AI 기능 설정
+ENABLE_AI_FEATURES=true
+GEMINI_API_KEY=your_gemini_api_key
+GEMINI_MODEL=gemini-1.5-flash
+LLM_TEMPERATURE=0.7
+LLM_MAX_TOKENS=1000
+
+# AI 캐시 설정
+AI_CACHE_ENABLED=true
+AI_CACHE_TTL=3600
 ```
 
+**⚠️ 중요**: 
+- `gen-lang-client-*.json` 파일은 Google Cloud 인증서로 별도 관리해야 합니다.
+
 ### 3. 서비스 실행 (데모 환경)
+
+#### 방법 1: 수동 실행
 ```bash
 # 1. API 서버 실행 (백그라운드)
 uvicorn api_server:app --reload --host 0.0.0.0 --port 8000
@@ -127,6 +146,13 @@ python realtime_simulator.py
 # 4. SMS 봇 실행 (선택사항, 새 터미널)
 python coolsms_bot.py
 ```
+
+#### 방법 2: 자동 실행 스크립트 사용 (Windows)
+**⚠️ 중요**: 실행 전 확장자를 `.txt`에서 `.bat`으로 변경해야 합니다!
+
+1. **API 서버 실행**: `ops/start_api.txt` → `start_api.bat`로 변경 후 실행
+2. **대시보드 실행**: `ops/start_dashboard.txt` → `start_dashboard.bat`로 변경 후 실행  
+3. **전체 데모 실행**: `ops/run_demo.txt` → `run_demo.bat`로 변경 후 실행
 
 **실행 순서**: API 서버 → 대시보드 → (선택) 시뮬레이터 → (선택) SMS 봇
 
@@ -259,10 +285,31 @@ python coolsms_bot.py
 - "어떤 설비에 문제가 있나요?"
 
 ### 설정 요구사항
-- **Google Cloud 프로젝트**: `gen-lang-client-0696719372`
-- **인증 파일**: `gen-lang-client-0696719372-0f0c03eabd08.json`
+- **Google Cloud 프로젝트**: 새로 생성 필요
+- **인증 파일**: 서비스 계정 키 JSON 파일 생성 필요
 - **브라우저**: Chrome 권장 (마이크 권한 지원)
 - **Streamlit**: 1.28.0 이상 버전
+
+### Google Cloud 설정 가이드 (음성 AI 사용 시)
+1. **Google Cloud 프로젝트 생성**
+   - [Google Cloud Console](https://console.cloud.google.com/) 접속
+   - 새 프로젝트 생성 또는 기존 프로젝트 선택
+
+2. **필요한 API 활성화**
+   - Speech-to-Text API
+   - Vertex AI API
+   - Cloud Storage API
+
+3. **서비스 계정 생성**
+   - IAM & Admin → 서비스 계정
+   - 새 서비스 계정 생성
+   - JSON 키 다운로드
+
+4. **인증 파일 배치**
+   - 다운로드한 JSON 파일을 `app/config/` 폴더에 배치
+   - 파일명을 `gen-lang-client-*.json` 형식으로 변경
+
+**⚠️ 중요**: 음성 AI 기능이 없어도 핵심 데모는 정상 작동합니다!
 
 ## 🔄 API 엔드포인트
 
@@ -328,6 +375,14 @@ python coolsms_bot.py
 - **AI 모델**: 정적 모델로 실시간 학습 미지원
 - **데이터**: 시뮬레이션 데이터 기반
 - **성능**: 개발 환경 기준으로 실제 운영 환경과 차이 있음
+- **음성 AI**: Google Cloud 설정 필요 (선택사항)
+
+### 음성 AI 기능 사용 시 주의사항
+- **Google Cloud 프로젝트**: 별도 생성 및 설정 필요
+- **API 키**: Speech-to-Text, Vertex AI API 활성화 필요
+- **인증 파일**: 서비스 계정 키 JSON 파일 별도 관리
+- **비용**: Google Cloud 사용량에 따른 과금 발생 가능
+- **대안**: 음성 기능 없이도 대시보드, AI 모델, SMS 등 핵심 기능 정상 작동
 
 ### 운영 환경 전환 시 고려사항
 - **데이터베이스**: PostgreSQL, MySQL 등 엔터프라이즈급 DB로 전환
