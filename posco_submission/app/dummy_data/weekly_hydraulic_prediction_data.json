@@ -1,0 +1,58 @@
+[
+  {
+    "equipment": "압연기_39호기",
+    "prediction_date": "2024-07-30",
+    "probability": 0.456,
+    "status": "보통",
+    "timestamp": "2024-07-28 00:00:00"
+  },
+  {
+    "equipment": "압연기_37호기",
+    "prediction_date": "2024-07-31",
+    "probability": 0.345,
+    "status": "보통",
+    "timestamp": "2024-07-29 00:00:00"
+  },
+  {
+    "equipment": "압연기_48호기",
+    "prediction_date": "2024-08-02",
+    "probability": 0.323,
+    "status": "보통",
+    "timestamp": "2024-07-30 00:00:00"
+  },
+  {
+    "equipment": "압연기_39호기",
+    "prediction_date": "2024-08-03",
+    "probability": 0.305,
+    "status": "보통",
+    "timestamp": "2024-07-31 00:00:00"
+  },
+  {
+    "equipment": "압연기_10호기",
+    "prediction_date": "2024-08-03",
+    "probability": 0.306,
+    "status": "보통",
+    "timestamp": "2024-08-01 00:00:00"
+  },
+  {
+    "equipment": "압연기_47호기",
+    "prediction_date": "2024-08-06",
+    "probability": 0.215,
+    "status": "낮음",
+    "timestamp": "2024-08-02 00:00:00"
+  },
+  {
+    "equipment": "압연기_27호기",
+    "prediction_date": "2024-08-04",
+    "probability": 0.502,
+    "status": "보통",
+    "timestamp": "2024-08-03 00:00:00"
+  },
+  {
+    "equipment": "압연기_13호기",
+    "prediction_date": "2024-08-06",
+    "probability": 0.416,
+    "status": "보통",
+    "timestamp": "2024-08-04 00:00:00"
+  }
+]
